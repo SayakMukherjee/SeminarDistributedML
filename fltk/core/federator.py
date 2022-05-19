@@ -174,8 +174,13 @@ class Federator(Node):
         for communication_round in range(self.config.rounds):
             self.exec_round(communication_round)
 
+        # re-calibration
+        self.recalibrate()
+
         self.save_data()
         self.logger.info('Federator is stopping')
+
+
 
     def save_data(self):
         """
@@ -312,3 +317,56 @@ class Federator(Node):
                                  confusion_matrix=conf_mat)
         self.exp_data.append(record)
         self.logger.info(f'[Round {com_round_id:>3}] Round duration is {duration} seconds')
+
+    def recalibrate(self):
+
+        # resend the latest model
+        last_model = self.get_nn_parameters()
+        for client in self.clients:
+            self.message(client.ref, Client.update_nn_parameters, last_model)
+
+        client_means = {}
+        client_stds = {}
+
+        training_futures: List[torch.Future] = []  # pylint: disable=no-member
+
+        def get_client_stats(fut: torch.Future, client_ref: LocalClient, client_means,
+                             client_stds):  # pylint: disable=no-member
+
+            means_dict, std_dict = fut.wait()
+            self.logger.info(f'Training callback for client {client_ref.name} with accuracy={accuracy}')
+            client_means[client_ref.name] = means_dict
+            client_stds[client_ref.name] = std_dict
+
+        for client in self.clients:
+            future = self.message_async(client.ref, Client.get_stats, num_epochs)
+            cb_factory(future, get_client_stats, client, client_means, client_stds)
+            self.logger.info(f'Request sent to client {client.name}')
+            training_futures.append(future)
+
+        def all_futures_done(futures: List[torch.Future]) -> bool:  # pylint: disable=no-member
+            return all(map(lambda x: x.done(), futures))
+
+        while not all_futures_done(training_futures):
+            time.sleep(0.1)
+            self.logger.info('')
+            # self.logger.info(f'Waiting for other clients')
+
+        self.logger.info('Continue with rest [1]')
+        time.sleep(3)
+
+        # TODO: aggregate mean and std per class from paper
+
+        # TODO: create normal distribution per class
+
+        # TODO: Freeze the feature extractor layers
+
+        # TODO: Train classifier using the sampled data
+
+        # resend the latest model
+        last_model = self.get_nn_parameters()
+        for client in self.clients:
+            self.message(client.ref, Client.update_nn_parameters, last_model)
+
+        self.logger.info(f'Recalibration Completed')
+
