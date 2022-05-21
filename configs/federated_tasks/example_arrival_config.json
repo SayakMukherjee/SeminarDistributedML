@@ -3,9 +3,9 @@
     "type": "federated",
     "jobClassParameters": {
       "networkConfiguration": {
-        "network": "FashionMNISTCNN",
+        "network": "ResNet50",
         "lossFunction": "CrossEntropyLoss",
-        "dataset": "mnist"
+        "dataset": "cifar10"
       },
       "systemParameters": {
         "dataParallelism": null,
@@ -51,7 +51,7 @@
       },
       "learningParameters": {
         "totalEpochs": 0,
-        "rounds": 5,
+        "rounds": 2,
         "epochsPerRound": 1,
         "cuda": false,
         "clientsPerRound": 2,

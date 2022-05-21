@@ -9,6 +9,11 @@ from typing import List, Union, Tuple
 
 import torch
 
+# Group 10 >> starts
+from torch.distributions.multivariate_normal import MultivariateNormal
+from fltk.strategy import get_optimizer
+# Group 10 << ends
+
 from fltk.core.client import Client
 from fltk.core.node import Node
 from fltk.strategy import get_aggregation
@@ -46,6 +51,38 @@ def cb_factory(future: torch.Future, method, *args, **kwargs):  # pylint: disabl
     """
     future.then(lambda x: method(x, *args, **kwargs))
 
+# Group 10 >> starts
+class RecalibrationDataset(torch.utils.data.Dataset):
+    """Recalibration dataset."""
+
+    def __init__(self, data_X, data_y):
+        """
+        Args:
+            data_X : Dataframe consisting of features.
+            data_y : Dataframe consisting of labels.
+        """
+        self.dataX = data_X
+        self.datay = data_y
+
+    def __len__(self):
+        return len(self.dataX)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        return self.dataX[idx], self.datay[idx]
+
+class Cifar10Recalibrate(torch.nn.Module):
+    def __init__(self, num_classes=10):
+        super(Cifar10Recalibrate, self).__init__()
+        
+        self.linear = torch.nn.Linear(2048, num_classes)
+
+    def forward(self, x): # pylint: disable=missing-function-docstring
+        out = self.linear(x)
+        return out
+# Group 10 << ends
 
 class Federator(Node):
     """
@@ -174,8 +211,16 @@ class Federator(Node):
         for communication_round in range(self.config.rounds):
             self.exec_round(communication_round)
 
+        # Group 10 changes >> starts
+        test_accuracy, test_loss, _ = self.test(self.net)
+        self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} before calibration')
+
         # re-calibration
         self.recalibrate()
+
+        test_accuracy, test_loss, _ = self.test(self.net)
+        self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} after calibration')
+        # Group 10 changes << ends
 
         self.save_data()
         self.logger.info('Federator is stopping')
@@ -318,6 +363,7 @@ class Federator(Node):
         self.exp_data.append(record)
         self.logger.info(f'[Round {com_round_id:>3}] Round duration is {duration} seconds')
 
+    # Group 10 changes>> starts
     def recalibrate(self):
 
         # resend the latest model
@@ -363,60 +409,112 @@ class Federator(Node):
         agg_std = {} # aggregated standard deviation per class
 
         # Aggregate mean and std per class from paper
-
-        # loop over clients
-        for client in self.clients:
-
-            # loop over each class per client
-            for class_name in client_means[client].keys():
-
-                # aggregate means
-                try:
+        for client in self.clients:  # loop over clients
+            for class_name in client_means[client].keys(): # loop over each class per client
+                try: # aggregate means
                     agg_mean[class_name].data += client_size[client][class_name].data * \
                                                  client_means[client][class_name].data
                 except:
                     agg_mean[class_name] = client_size[client][class_name].data * \
-                                                 client_means[client][class_name].data
-                # calculate class sizes
-                try:
+                                                 client_means[client][class_name].data 
+                try: # calculate class sizes
                     class_size[class_name].data += client_size[client][class_name].data
                 except:
                     class_size[class_name] = client_size[client][class_name].data
-        
-        # TODO: check key in agg_means and class_size
 
         for class_name in agg_mean.keys():
             agg_mean[class_name].data = agg_mean[class_name]/class_size[class_name]
         
-        # loop over clients
-        for client in self.clients:
+        self.logger.info('Completed aggregating means')
 
-            # loop over each class per client
-            for class_name in client_stds[client].keys():
-
-                # aggregate means
-                try:
-                    # size*std(1+std) - std
+        for client in self.clients: # loop over clients
+            for class_name in client_stds[client].keys(): # loop over each class per client
+                try: # aggregate means  size*std(1+std) - std
                     agg_std[class_name].data +=  (client_size[client][class_name] * \
                                                   client_stds[client][class_name]) * \
-                                                  (1 - client_stds[client][class_name]) - client_stds[client][class_name]
-                   
+                                                  (1 - client_stds[client][class_name]) - client_stds[client][class_name]  
                 except:
                     agg_std[class_name] =  (client_size[client][class_name] * \
                                             client_stds[client][class_name]) * \
                                             (1 - client_stds[client][class_name]) - client_stds[client][class_name]
-
-        # TODO: check key in agg_std and class_size
                   
         for class_name in agg_std.keys():
             agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
                                   ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name]**2)
         
-        # TODO: create normal distribution per class
+        self.logger.info('Completed aggregating standard deviation')
 
-        # TODO: Freeze the feature extractor layers
+        # create normal distribution per class
+        m_c = 100
+        first_val = True
 
-        # TODO: Train classifier using the sampled data
+        with torch.no_grad():
+            for class_name in agg_mean.keys():
+                dist = MultivariateNormal(
+                    loc = agg_mean[class_name], 
+                    covariance_matrix=torch.diag(agg_std[class_name])
+                    )
+
+                if first_val:
+                    data_X = dist.rsample(torch.Size([m_c]))
+                    data_y = torch.full((m_c,), class_name)
+                    first_val = False
+                else:
+                    data_X = torch.cat((data_X, dist.rsample(torch.Size([m_c]))), 0) 
+                    data_y = torch.cat((data_y, torch.full((m_c,), class_name)), 0) 
+
+        recal_dataset = RecalibrationDataset(data_X, data_y)
+        recal_loader = torch.utils.data.DataLoader(recal_dataset, batch_size=128)
+
+        # create model with only linear layer
+        model = Cifar10Recalibrate()
+
+        with torch.no_grad():
+            model.linear.weight.copy_(self.net.linear.weight)
+            model.linear.bias.copy_(self.net.linear.bias)
+
+        # train classifier using the sampled data
+        loss_function = self.config.get_loss_function()()
+        optimizer = get_optimizer(self.config.optimizer)(self.net.parameters(), **self.config.optimizer_args)
+
+        num_epochs = 1
+        start_time = time.time()
+
+        running_loss = 0.0
+        final_running_loss = 0.0
+        # if self.distributed:
+        #     self.dataset.train_sampler.set_epoch(num_epochs)
+
+        number_of_training_samples = len(recal_loader)
+        self.logger.info(f'Recalibration: Number of training samples: {number_of_training_samples}')
+
+        for i, (inputs, labels) in enumerate(recal_loader, 0):
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+            outputs = self.net(inputs)
+            loss = loss_function(outputs, labels)
+
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            # Mark logging update step
+            if i % self.config.log_interval == 0:
+                self.logger.info(
+                        f'[{num_epochs:d}, {i:5d}] loss: {running_loss / self.config.log_interval:.3f}')
+                final_running_loss = running_loss / self.config.log_interval
+                running_loss = 0.0
+                # break
+
+        end_time = time.time()
+        duration = end_time - start_time
+        self.logger.info(f'Train duration is {duration} seconds')
+
+        with torch.no_grad():
+            self.net.linear.weight.copy_(model.linear.weight)
+            self.net.linear.bias.copy_(model.linear.bias)
 
         # resend the latest model
         last_model = self.get_nn_parameters()
@@ -425,3 +523,4 @@ class Federator(Node):
 
         self.logger.info(f'Recalibration Completed')
 
+    # Group 10 changes << ends

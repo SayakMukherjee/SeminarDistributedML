@@ -10,6 +10,16 @@ from fltk.schedulers import MinCapableStepLR
 from fltk.strategy import get_optimizer
 from fltk.util.config import FedLearningConfig
 
+# Group 10 >> starts
+import copy
+
+class Identity(torch.nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+        
+    def forward(self, x):
+        return x
+# Group 10 << ends
 
 class Client(Node):
     """
@@ -178,13 +188,46 @@ class Client(Node):
             weights[k] = value.cpu()
         return loss, weights, accuracy, test_loss, round_duration, train_duration, test_duration, test_conf_matrix
 
+    # Group 10 >> starts
     def get_stats(self) -> Tuple[Any, Any, Any]:
-        #TODO: return mean, std and number of samples per class
+        activations = {}
+        model = copy.deepcopy(self.net)
+        model.linear = Identity()
+
+        start_time = time.time()
+
+        self.logger.info(f'[ID:{self.id}] Starting feature extraction')
+
+        with torch.no_grad():
+            for (images, labels) in self.dataset.get_test_loader():
+                images, labels = images.to(self.device), labels.to(self.device)
+
+                outputs = model(images)
+
+                try:
+                    activations['outputs'].data = torch.cat((activations['outputs'], outputs.clone()), 0)
+                    activations['labels'].data = torch.cat((activations['labels'], labels.clone()), 0)
+                except:
+                    activations['outputs'] = outputs.clone()
+                    activations['labels'] = labels.clone()
+
+        self.logger.info(f'[ID:{self.id}] Feature extraction completed')
+
         means_dict = {}
         std_dict = {}
         sizes_dict = {}
-        
+
+        for class_name in activations['labels'].unique():
+            means_dict[class_name.item()] = activations['outputs'][activations['labels'] == class_name].mean(0)
+            std_dict[class_name.item()] = activations['outputs'][activations['labels'] == class_name].std(0)
+            sizes_dict[class_name.item()] = torch.sum(activations['labels'] == class_name)
+
+        end_time = time.time()
+        duration = end_time - start_time
+        self.logger.info(f'Data stats fetched in {duration} seconds')
+
         return means_dict, std_dict, sizes_dict
+    # Group 10 << ends
 
     def __del__(self):
         self.logger.info(f'Client {self.id} is stopping')

@@ -174,8 +174,8 @@ class Orchestrator(DistNode):
         """
         self._alive = True
         start_time = time.time()
-        if clear:
-            self.__clear_jobs()
+        # if clear:
+        #     self.__clear_jobs()
         while self._alive and time.time() - start_time < self._config.get_duration():
             # 1. Check arrivals
             # If new arrivals, store them in arrival list
