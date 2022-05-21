@@ -178,9 +178,13 @@ class Client(Node):
             weights[k] = value.cpu()
         return loss, weights, accuracy, test_loss, round_duration, train_duration, test_duration, test_conf_matrix
 
-    def get_stats(self):
+    def get_stats(self) -> Tuple[Any, Any, Any]:
         #TODO: return mean, std and number of samples per class
-        pass
+        means_dict = {}
+        std_dict = {}
+        sizes_dict = {}
+        
+        return means_dict, std_dict, sizes_dict
 
     def __del__(self):
         self.logger.info(f'Client {self.id} is stopping')
