@@ -327,20 +327,22 @@ class Federator(Node):
 
         client_means = {}
         client_stds = {}
+        client_size = {}
 
         training_futures: List[torch.Future] = []  # pylint: disable=no-member
 
         def get_client_stats(fut: torch.Future, client_ref: LocalClient, client_means,
-                             client_stds):  # pylint: disable=no-member
+                             client_stds, client_size):  # pylint: disable=no-member
 
-            means_dict, std_dict = fut.wait()
-            self.logger.info(f'Training callback for client {client_ref.name} with accuracy={accuracy}')
+            means_dict, std_dict, sizes_dict = fut.wait()
+            self.logger.info(f'Training callback for client {client_ref.name}')
             client_means[client_ref.name] = means_dict
             client_stds[client_ref.name] = std_dict
+            client_size[client_ref.name] = sizes_dict
 
         for client in self.clients:
-            future = self.message_async(client.ref, Client.get_stats, num_epochs)
-            cb_factory(future, get_client_stats, client, client_means, client_stds)
+            future = self.message_async(client.ref, Client.get_stats)
+            cb_factory(future, get_client_stats, client, client_means, client_stds, client_size)
             self.logger.info(f'Request sent to client {client.name}')
             training_futures.append(future)
 
@@ -355,8 +357,61 @@ class Federator(Node):
         self.logger.info('Continue with rest [1]')
         time.sleep(3)
 
-        # TODO: aggregate mean and std per class from paper
+        # local variables
+        class_size = {} # size per class
+        agg_mean = {} # aggregated means per class
+        agg_std = {} # aggregated standard deviation per class
 
+        # Aggregate mean and std per class from paper
+
+        # loop over clients
+        for client in self.clients:
+
+            # loop over each class per client
+            for class_name in client_means[client].keys():
+
+                # aggregate means
+                try:
+                    agg_mean[class_name].data += client_size[client][class_name].data * \
+                                                 client_means[client][class_name].data
+                except:
+                    agg_mean[class_name] = client_size[client][class_name].data * \
+                                                 client_means[client][class_name].data
+                # calculate class sizes
+                try:
+                    class_size[class_name].data += client_size[client][class_name].data
+                except:
+                    class_size[class_name] = client_size[client][class_name].data
+        
+        # TODO: check key in agg_means and class_size
+
+        for class_name in agg_mean.keys():
+            agg_mean[class_name].data = agg_mean[class_name]/class_size[class_name]
+        
+        # loop over clients
+        for client in self.clients:
+
+            # loop over each class per client
+            for class_name in client_stds[client].keys():
+
+                # aggregate means
+                try:
+                    # size*std(1+std) - std
+                    agg_std[class_name].data +=  (client_size[client][class_name] * \
+                                                  client_stds[client][class_name]) * \
+                                                  (1 - client_stds[client][class_name]) - client_stds[client][class_name]
+                   
+                except:
+                    agg_std[class_name] =  (client_size[client][class_name] * \
+                                            client_stds[client][class_name]) * \
+                                            (1 - client_stds[client][class_name]) - client_stds[client][class_name]
+
+        # TODO: check key in agg_std and class_size
+                  
+        for class_name in agg_std.keys():
+            agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
+                                  ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name]**2)
+        
         # TODO: create normal distribution per class
 
         # TODO: Freeze the feature extractor layers
