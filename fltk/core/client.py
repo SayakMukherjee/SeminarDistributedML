@@ -109,7 +109,7 @@ class Client(Node):
         duration = end_time - start_time
         self.logger.info(f'Train duration is {duration} seconds')
 
-        return final_running_loss, self.get_nn_parameters(),
+        return final_running_loss, self.get_nn_parameters()
 
     def set_tau_eff(self, total):
         client_weight = self.get_client_datasize() / total

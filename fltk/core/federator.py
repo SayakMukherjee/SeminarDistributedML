@@ -77,7 +77,7 @@ class Cifar10Recalibrate(torch.nn.Module):
     def __init__(self, num_classes=10):
         super(Cifar10Recalibrate, self).__init__()
         
-        self.linear = torch.nn.Linear(2048, num_classes)
+        self.linear = torch.nn.Linear(7 * 7 * 32, num_classes)
 
     def forward(self, x): # pylint: disable=missing-function-docstring
         out = self.linear(x)
@@ -410,17 +410,17 @@ class Federator(Node):
 
         # Aggregate mean and std per class from paper
         for client in self.clients:  # loop over clients
-            for class_name in client_means[client].keys(): # loop over each class per client
+            for class_name in client_means[client.name].keys(): # loop over each class per client
                 try: # aggregate means
-                    agg_mean[class_name].data += client_size[client][class_name].data * \
-                                                 client_means[client][class_name].data
+                    agg_mean[class_name].data += client_size[client.name][class_name].data * \
+                                                 client_means[client.name][class_name].data
                 except:
-                    agg_mean[class_name] = client_size[client][class_name].data * \
-                                                 client_means[client][class_name].data 
+                    agg_mean[class_name] = client_size[client.name][class_name].data * \
+                                                 client_means[client.name][class_name].data 
                 try: # calculate class sizes
-                    class_size[class_name].data += client_size[client][class_name].data
+                    class_size[class_name].data += client_size[client.name][class_name].data
                 except:
-                    class_size[class_name] = client_size[client][class_name].data
+                    class_size[class_name] = client_size[client.name][class_name].data
 
         for class_name in agg_mean.keys():
             agg_mean[class_name].data = agg_mean[class_name]/class_size[class_name]
@@ -428,15 +428,17 @@ class Federator(Node):
         self.logger.info('Completed aggregating means')
 
         for client in self.clients: # loop over clients
-            for class_name in client_stds[client].keys(): # loop over each class per client
+            for class_name in client_stds[client.name].keys(): # loop over each class per client
                 try: # aggregate means  size*std(1+std) - std
-                    agg_std[class_name].data +=  (client_size[client][class_name] * \
-                                                  client_stds[client][class_name]) * \
-                                                  (1 - client_stds[client][class_name]) - client_stds[client][class_name]  
+                    agg_std[class_name].data +=  (client_size[client.name][class_name] * \
+                                                  client_stds[client.name][class_name]) * \
+                                                  (1 - client_stds[client.name][class_name]) -\
+                                                       client_stds[client.name][class_name]  
                 except:
-                    agg_std[class_name] =  (client_size[client][class_name] * \
-                                            client_stds[client][class_name]) * \
-                                            (1 - client_stds[client][class_name]) - client_stds[client][class_name]
+                    agg_std[class_name] =  (client_size[client.name][class_name] * \
+                                            client_stds[client.name][class_name]) * \
+                                            (1 - client_stds[client.name][class_name]) -\
+                                                 client_stds[client.name][class_name]
                   
         for class_name in agg_std.keys():
             agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
@@ -450,6 +452,10 @@ class Federator(Node):
 
         with torch.no_grad():
             for class_name in agg_mean.keys():
+                self.logger.info(f'Class Name: {class_name}')
+                self.logger.info(f'Agg Means Dim: {agg_mean[class_name].size()}')
+                self.logger.info(f'Cov Matrix Dim: {torch.diag(agg_std[class_name]).size()}')
+
                 dist = MultivariateNormal(
                     loc = agg_mean[class_name], 
                     covariance_matrix=torch.diag(agg_std[class_name])

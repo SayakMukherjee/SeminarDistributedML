@@ -205,6 +205,7 @@ class Orchestrator(DistNode):
                 # TODO: Extend this logic in your real project, this is only meant for demo purposes
                 # For now we exit the thread after scheduling a single task.
                 self.stop()
+                return
 
             self.__logger.debug("Still alive...")
             time.sleep(5)
