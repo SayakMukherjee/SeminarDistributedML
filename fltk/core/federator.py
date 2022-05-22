@@ -211,7 +211,6 @@ class Federator(Node):
         for communication_round in range(self.config.rounds):
             self.exec_round(communication_round)
 
-<<<<<<< HEAD
         # Group 10 changes >> starts
         test_accuracy, test_loss, _ = self.test(self.net)
         self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} before calibration')
@@ -223,12 +222,6 @@ class Federator(Node):
         self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} after calibration')
         # Group 10 changes << ends
 
-||||||| 4f6eddd
-=======
-        # re-calibration
-        self.recalibrate()
-
->>>>>>> a50c358829df611335f8af3636b19f2230cf4baf
         self.save_data()
         self.logger.info('Federator is stopping')
 
@@ -369,7 +362,6 @@ class Federator(Node):
                                  confusion_matrix=conf_mat)
         self.exp_data.append(record)
         self.logger.info(f'[Round {com_round_id:>3}] Round duration is {duration} seconds')
-<<<<<<< HEAD
 
     # Group 10 changes>> starts
     def recalibrate(self):
@@ -538,114 +530,3 @@ class Federator(Node):
         self.logger.info(f'Recalibration Completed')
 
     # Group 10 changes << ends
-||||||| 4f6eddd
-=======
-
-    def recalibrate(self):
-
-        # resend the latest model
-        last_model = self.get_nn_parameters()
-        for client in self.clients:
-            self.message(client.ref, Client.update_nn_parameters, last_model)
-
-        client_means = {}
-        client_stds = {}
-        client_size = {}
-
-        training_futures: List[torch.Future] = []  # pylint: disable=no-member
-
-        def get_client_stats(fut: torch.Future, client_ref: LocalClient, client_means,
-                             client_stds, client_size):  # pylint: disable=no-member
-
-            means_dict, std_dict, sizes_dict = fut.wait()
-            self.logger.info(f'Training callback for client {client_ref.name}')
-            client_means[client_ref.name] = means_dict
-            client_stds[client_ref.name] = std_dict
-            client_size[client_ref.name] = sizes_dict
-
-        for client in self.clients:
-            future = self.message_async(client.ref, Client.get_stats)
-            cb_factory(future, get_client_stats, client, client_means, client_stds, client_size)
-            self.logger.info(f'Request sent to client {client.name}')
-            training_futures.append(future)
-
-        def all_futures_done(futures: List[torch.Future]) -> bool:  # pylint: disable=no-member
-            return all(map(lambda x: x.done(), futures))
-
-        while not all_futures_done(training_futures):
-            time.sleep(0.1)
-            self.logger.info('')
-            # self.logger.info(f'Waiting for other clients')
-
-        self.logger.info('Continue with rest [1]')
-        time.sleep(3)
-
-        # local variables
-        class_size = {} # size per class
-        agg_mean = {} # aggregated means per class
-        agg_std = {} # aggregated standard deviation per class
-
-        # Aggregate mean and std per class from paper
-
-        # loop over clients
-        for client in self.clients:
-
-            # loop over each class per client
-            for class_name in client_means[client].keys():
-
-                # aggregate means
-                try:
-                    agg_mean[class_name].data += client_size[client][class_name].data * \
-                                                 client_means[client][class_name].data
-                except:
-                    agg_mean[class_name] = client_size[client][class_name].data * \
-                                                 client_means[client][class_name].data
-                # calculate class sizes
-                try:
-                    class_size[class_name].data += client_size[client][class_name].data
-                except:
-                    class_size[class_name] = client_size[client][class_name].data
-        
-        # TODO: check key in agg_means and class_size
-
-        for class_name in agg_mean.keys():
-            agg_mean[class_name].data = agg_mean[class_name]/class_size[class_name]
-        
-        # loop over clients
-        for client in self.clients:
-
-            # loop over each class per client
-            for class_name in client_stds[client].keys():
-
-                # aggregate means
-                try:
-                    # size*std(1+std) - std
-                    agg_std[class_name].data +=  (client_size[client][class_name] * \
-                                                  client_stds[client][class_name]) * \
-                                                  (1 - client_stds[client][class_name]) - client_stds[client][class_name]
-                   
-                except:
-                    agg_std[class_name] =  (client_size[client][class_name] * \
-                                            client_stds[client][class_name]) * \
-                                            (1 - client_stds[client][class_name]) - client_stds[client][class_name]
-
-        # TODO: check key in agg_std and class_size
-                  
-        for class_name in agg_std.keys():
-            agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
-                                  ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name]**2)
-        
-        # TODO: create normal distribution per class
-
-        # TODO: Freeze the feature extractor layers
-
-        # TODO: Train classifier using the sampled data
-
-        # resend the latest model
-        last_model = self.get_nn_parameters()
-        for client in self.clients:
-            self.message(client.ref, Client.update_nn_parameters, last_model)
-
-        self.logger.info(f'Recalibration Completed')
-
->>>>>>> a50c358829df611335f8af3636b19f2230cf4baf
