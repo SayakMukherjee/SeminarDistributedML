@@ -3,9 +3,9 @@
     "type": "federated",
     "jobClassParameters": {
       "networkConfiguration": {
-        "network": "FashionMNISTCNN",
+        "network": "Cifar10ResNet",
         "lossFunction": "CrossEntropyLoss",
-        "dataset": "mnist"
+        "dataset": "cifar10"
       },
       "systemParameters": {
         "dataParallelism": null,

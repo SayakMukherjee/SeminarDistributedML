@@ -12,6 +12,7 @@ import torch
 # Group 10 >> starts
 from torch.distributions.multivariate_normal import MultivariateNormal
 from fltk.strategy import get_optimizer
+from sklearn.preprocessing import power_transform
 # Group 10 << ends
 
 from fltk.core.client import Client
@@ -77,10 +78,12 @@ class Cifar10Recalibrate(torch.nn.Module):
     def __init__(self, num_classes=10):
         super(Cifar10Recalibrate, self).__init__()
         
+        self.relu = torch.nn.ReLU()
         self.linear = torch.nn.Linear(7 * 7 * 32, num_classes)
 
     def forward(self, x): # pylint: disable=missing-function-docstring
-        out = self.linear(x)
+        out = self.relu(x)
+        out = self.linear(out)
         return out
 # Group 10 << ends
 
@@ -430,19 +433,19 @@ class Federator(Node):
         for client in self.clients: # loop over clients
             for class_name in client_stds[client.name].keys(): # loop over each class per client
                 try: # aggregate means  size*std(1+std) - std
-                    agg_std[class_name].data +=  (client_size[client.name][class_name] * \
-                                                  client_stds[client.name][class_name]) * \
-                                                  (1 - client_stds[client.name][class_name]) -\
-                                                       client_stds[client.name][class_name]  
+                    agg_std[class_name].data +=  ((client_size[client.name][class_name] - 1) * \
+                                                    client_stds[client.name][class_name]) + \
+                                                    (client_size[client.name][class_name] * \
+                                                    agg_mean[class_name] * agg_mean[class_name].T)
                 except:
-                    agg_std[class_name] =  (client_size[client.name][class_name] * \
-                                            client_stds[client.name][class_name]) * \
-                                            (1 - client_stds[client.name][class_name]) -\
-                                                 client_stds[client.name][class_name]
+                    agg_std[class_name] =  ((client_size[client.name][class_name] - 1) * \
+                                            client_stds[client.name][class_name]) + \
+                                            (client_size[client.name][class_name] * \
+                                            agg_mean[class_name] * agg_mean[class_name].T)
                   
         for class_name in agg_std.keys():
             agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
-                                  ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name]**2)
+                          ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name] * agg_mean[class_name].T)
         
         self.logger.info('Completed aggregating standard deviation')
 
@@ -461,13 +464,18 @@ class Federator(Node):
                     covariance_matrix=torch.diag(agg_std[class_name])
                     )
 
+                class_data = power_transform(dist.rsample(torch.Size([m_c])).cpu())
+                class_data = torch.Tensor(class_data)
+
                 if first_val:
-                    data_X = dist.rsample(torch.Size([m_c]))
+                    data_X = class_data
                     data_y = torch.full((m_c,), class_name)
                     first_val = False
                 else:
-                    data_X = torch.cat((data_X, dist.rsample(torch.Size([m_c]))), 0) 
+                    data_X = torch.cat((data_X, class_data), 0) 
                     data_y = torch.cat((data_y, torch.full((m_c,), class_name)), 0) 
+
+        self.logger.info('Completed data generation')
 
         recal_dataset = RecalibrationDataset(data_X, data_y)
         recal_loader = torch.utils.data.DataLoader(recal_dataset, batch_size=128)
