@@ -11,6 +11,7 @@ import torch
 
 # Group 10 >> starts
 from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.utils.data.dataset import T
 from fltk.strategy import get_optimizer
 from sklearn.preprocessing import power_transform
 # Group 10 << ends
@@ -410,6 +411,7 @@ class Federator(Node):
         class_size = {} # size per class
         agg_mean = {} # aggregated means per class
         agg_std = {} # aggregated standard deviation per class
+        epsilon = 10
 
         # Aggregate mean and std per class from paper
         for client in self.clients:  # loop over clients
@@ -445,37 +447,48 @@ class Federator(Node):
                   
         for class_name in agg_std.keys():
             agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
-                          ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name] * agg_mean[class_name].T)
+                          ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name] * \
+                              agg_mean[class_name].T)
+            agg_std[class_name] = abs(agg_std[class_name]) + torch.tensor(epsilon) * torch.ones(agg_std[class_name].shape)
         
         self.logger.info('Completed aggregating standard deviation')
 
         # create normal distribution per class
         m_c = 100
         first_val = True
-
+        failed = False
         with torch.no_grad():
             for class_name in agg_mean.keys():
                 self.logger.info(f'Class Name: {class_name}')
-                self.logger.info(f'Agg Means Dim: {agg_mean[class_name].size()}')
-                self.logger.info(f'Cov Matrix Dim: {torch.diag(agg_std[class_name]).size()}')
+                self.logger.info(f'Agg Means Dim: {agg_mean[class_name].shape}')
+                self.logger.info(f'Cov Matrix Dim: {torch.diag(agg_std[class_name]).shape}')
+                
+                try:
+                    dist = MultivariateNormal(
+                        loc = agg_mean[class_name], 
+                        covariance_matrix=torch.diag(agg_std[class_name])
+                        )
 
-                dist = MultivariateNormal(
-                    loc = agg_mean[class_name], 
-                    covariance_matrix=torch.diag(agg_std[class_name])
-                    )
+                    class_data = power_transform(dist.rsample(torch.Size([m_c])).cpu())
+                    class_data = torch.Tensor(class_data)
 
-                class_data = power_transform(dist.rsample(torch.Size([m_c])).cpu())
-                class_data = torch.Tensor(class_data)
+                    if first_val:
+                        data_X = class_data
+                        data_y = torch.full((m_c,), class_name)
+                        first_val = False
+                    else:
+                        data_X = torch.cat((data_X, class_data), 0) 
+                        data_y = torch.cat((data_y, torch.full((m_c,), class_name)), 0) 
 
-                if first_val:
-                    data_X = class_data
-                    data_y = torch.full((m_c,), class_name)
-                    first_val = False
-                else:
-                    data_X = torch.cat((data_X, class_data), 0) 
-                    data_y = torch.cat((data_y, torch.full((m_c,), class_name)), 0) 
+                except Exception as e: 
+                    failed = True
+                    self.logger.info(f'Sampling failed with error:{e}')
 
         self.logger.info('Completed data generation')
+
+        if failed:
+            self.logger.info('Failed in data generation')
+            return
 
         recal_dataset = RecalibrationDataset(data_X, data_y)
         recal_loader = torch.utils.data.DataLoader(recal_dataset, batch_size=128)
@@ -484,8 +497,8 @@ class Federator(Node):
         model = Cifar10Recalibrate()
 
         with torch.no_grad():
-            model.linear.weight.copy_(self.net.linear.weight)
-            model.linear.bias.copy_(self.net.linear.bias)
+            model.linear.weight.copy_(self.net.fc.weight)
+            model.linear.bias.copy_(self.net.fc.bias)
 
         # train classifier using the sampled data
         loss_function = self.config.get_loss_function()()
@@ -508,7 +521,7 @@ class Federator(Node):
             # zero the parameter gradients
             optimizer.zero_grad()
 
-            outputs = self.net(inputs)
+            outputs = model(inputs)
             loss = loss_function(outputs, labels)
 
             loss.backward()
@@ -527,8 +540,8 @@ class Federator(Node):
         self.logger.info(f'Train duration is {duration} seconds')
 
         with torch.no_grad():
-            self.net.linear.weight.copy_(model.linear.weight)
-            self.net.linear.bias.copy_(model.linear.bias)
+            self.net.fc.weight.copy_(model.linear.weight)
+            self.net.fc.bias.copy_(model.linear.bias)
 
         # resend the latest model
         last_model = self.get_nn_parameters()
