@@ -192,7 +192,8 @@ class Client(Node):
     def get_stats(self) -> Tuple[Any, Any, Any]:
         activations = {}
         model = copy.deepcopy(self.net)
-        model.linear = Identity()
+        model.fc = Identity()
+        self.logger.info(f'[ID:{self.id}] {model}')
 
         start_time = time.time()
 
@@ -222,9 +223,11 @@ class Client(Node):
             std_dict[class_name.item()] = activations['outputs'][activations['labels'] == class_name].std(0)
             sizes_dict[class_name.item()] = torch.sum(activations['labels'] == class_name)
 
+            self.logger.info(f'[ID:{self.id}] Means dimension {means_dict[class_name.item()].shape}')
+
         end_time = time.time()
         duration = end_time - start_time
-        self.logger.info(f'Data stats fetched in {duration} seconds')
+        self.logger.info(f'[ID:{self.id}] Data stats fetched in {duration} seconds')
 
         return means_dict, std_dict, sizes_dict
     # Group 10 << ends
