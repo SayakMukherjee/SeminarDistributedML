@@ -1,10 +1,8 @@
 # pylint: disable=missing-function-docstring,invalid-name
-import logging
 from dataclasses import dataclass, field
-from enum import Enum, EnumMeta
 from logging import getLogger
 from pathlib import Path
-from typing import Type, List, Dict, Any, T
+from typing import Type, List, Dict, Any, T, Union
 
 import re
 
@@ -16,13 +14,23 @@ from dataclasses_json import config, dataclass_json
 # noinspection PyProtectedMember
 from torch.nn.modules.loss import _Loss
 
-from fltk.util.config.definitions import DataSampler, Nets, Dataset
+from fltk.util.config.definitions import DataSampler, Loss, get_loss_function
 from fltk.util.config.definitions.aggregate import Aggregations
 from fltk.util.config.definitions.dataset import Dataset
 from fltk.util.config.definitions.logging import LogLevel
 from fltk.util.config.definitions.net import Nets
 from fltk.util.config.definitions.optim import Optimizations
 
+
+def _eval_decoder(obj: Union[str, T]) -> Union[Any, T]:
+    """
+    Decoder function to help decoding string objects to objects using the Python interpeter.
+    If a non-string object is passed it will return the argument
+
+    """
+    if isinstance(obj, str):
+        return eval(obj)
+    return obj
 
 def get_safe_loader() -> yaml.SafeLoader:
     """
@@ -58,27 +66,29 @@ class LearningConfig:
     cuda: bool = field(metadata=dict(required=False, missing=False))
     scheduler_step_size: int = field(metadata=dict(required=False, missing=50))
     scheduler_gamma: float = field(metadata=dict(required=False, missing=0.5))
+    min_lr: float = field(metadata=dict(required=False, missing=1e-10))
+    optimizer: Optimizations = field(metadata=dict(required=False, missing=Optimizations.sgd))
 
 
 @dataclass_json
 @dataclass
 class FedLearningConfig(LearningConfig):
+    loss_function: Loss = Loss.cross_entropy_loss
+    # Number of communication epochs.
     rounds: int = 2
+    # Number of epochs to perform per ROUND
     epochs: int = 1
     lr: float = 0.01
     momentum: float = 0.1
     shuffle: bool = False
     log_interval: int = 10
-    min_lr: float = 1e-10
     rng_seed = 0
 
     # Enum
-    optimizer: Optimizations = Optimizations.sgd
     optimizer_args = {
         'lr': lr,
         'momentum': momentum
     }
-    loss_function: Type[_Loss] = torch.nn.CrossEntropyLoss
     # Enum
     log_level: LogLevel = LogLevel.DEBUG
 
@@ -137,7 +147,7 @@ class FedLearningConfig(LearningConfig):
         return self.data_path
 
     def get_loss_function(self) -> Type[_Loss]:
-        return self.loss_function
+        return get_loss_function(self.loss_function)
 
     @staticmethod
     def from_yaml(path: Path):
@@ -163,39 +173,47 @@ class FedLearningConfig(LearningConfig):
         return conf
 
 
-_available_loss = {
-    "CROSSENTROPYLOSS": torch.nn.CrossEntropyLoss,
-    "HUBERLOSS" : torch.nn.HuberLoss
-}
-
 @dataclass_json
 @dataclass
 class DistLearningConfig(LearningConfig):  # pylint: disable=too-many-instance-attributes
     """
     Class encapsulating LearningParameters, for now used under DistributedLearning.
     """
+    optimizer_args: Dict[str, Any]
     model: Nets
     dataset: Dataset
-    batch_size: int
-    test_batch_size: int
     max_epoch: int
     learning_rate: float
-    learning_decay: float
-    loss: str
-    optimizer: Optimizations
-    optimizer_args: Dict[str, Any]
-
-    min_lr: float
+    learning_rate_decay: float
     seed: int
+    loss: Loss = Loss.cross_entropy_loss
 
-    def get_loss(self) -> Type:
+    @staticmethod
+    def from_yaml(path: Path):
         """
-        Function to obtain the loss function Type that was given via commandline to be used during the training
-        execution.
-        @return: Type corresponding to the loss function that was passed as argument.
-        @rtype: Type
+        Parse yaml file to dataclass. Re-implemented to rely on dataclasses_json to load data with tested library.
+
+        Alternatively, running the followign code would result in loading a JSON formatted configuration file, in case
+        you prefer to create json based configuration files.
+
+        >>> with open("configs/example.json") as f:
+        >>>     DistLearningConfig.from_json(f.read())
+
+        @param path: Path pointing to configuration yaml file.
+        @type path: Path
+        @return: Configuration dataclass representation of the configuration file.
+        @rtype: FedLearningConfig
         """
-        safe_keyword = str.upper(self.loss)
-        if safe_keyword not in _available_loss:
-            logging.fatal(f"Cannot find configuration parameter {self.loss} in dictionary.")
-        return _available_loss.get(safe_keyword)
+        getLogger(__name__).debug(f'Loading yaml from {path.absolute()}')
+        safe_loader = get_safe_loader()
+        with open(path) as file:
+            content = yaml.load(file, Loader=safe_loader)
+            conf = DistLearningConfig.from_dict(content)
+        return conf
+
+
+    def get_loss_function(self) -> Type[_Loss]:
+        """
+        Helper function to get loss_function based on definition _or_ string.
+        """
+        return get_loss_function(self.loss)
