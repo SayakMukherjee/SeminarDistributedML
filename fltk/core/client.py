@@ -185,7 +185,7 @@ class Client(Node):
         round_duration = end - start
         train_duration = time_mark_between - start
         test_duration = end - time_mark_between
-        # self.logger.info(f'Round duration is {duration} seconds')
+        #self.logger.info(f'Round duration is {duration} seconds')
 
         if hasattr(self.optimizer, 'pre_communicate'):  # aka fednova or fedprox
             self.optimizer.pre_communicate()
@@ -195,6 +195,8 @@ class Client(Node):
 
     # Group 10 >> starts
     def get_stats(self) -> Tuple[Any, Any, Any]:
+        self.logger.info('Entered get_stats in client')
+
         activations = {}
         model = copy.deepcopy(self.net)
         model.fc = Identity()
