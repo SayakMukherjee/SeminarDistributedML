@@ -175,7 +175,7 @@ class Client(Node):
         training make-span, testing make-span, and confusion matrix.
         @rtype: Tuple[Any, Any, Any, Any, float, float, float, np.array]
         """
-        self.logger.info(f"[EXEC] running {num_epochs} locally...")
+        self.logger.info(f"[EXEC] running {num_epochs} epochs locally...")
         start = time.time()
         loss, weights = self.train(num_epochs, round_id)
         time_mark_between = time.time()
@@ -185,6 +185,7 @@ class Client(Node):
         round_duration = end - start
         train_duration = time_mark_between - start
         test_duration = end - time_mark_between
+        self.logger.info("Done with client training for this round")
         #self.logger.info(f'Round duration is {duration} seconds')
 
         if hasattr(self.optimizer, 'pre_communicate'):  # aka fednova or fedprox

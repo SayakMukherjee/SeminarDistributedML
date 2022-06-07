@@ -210,11 +210,13 @@ class Federator(Node):
         self.client_load_data()
         self.get_client_data_sizes()
         self.clients_ready()
-        # self.logger.info('Sleeping before starting communication')
-        # time.sleep(20)
+        self.logger.info('Sleeping before starting communication') #Changed here, uncommented this
+        time.sleep(20)     #Changed here, uncommented this
         for communication_round in range(self.config.rounds):
+            self.logger.info(f'Starting communication round {communication_round}') #Changed here, added this
             self.exec_round(communication_round)
 
+        self.logger.info("All communication rounds completed before recalibration starts ")
         # Group 10 changes >> starts
         test_accuracy, test_loss, _ = self.test(self.net)
         self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} before calibration')

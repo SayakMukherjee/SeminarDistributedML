@@ -105,7 +105,7 @@ class FedLearningConfig(LearningConfig):
     default_model_folder_path: str = "default_models"
     data_path: str = "data"
     # Enum
-    data_sampler: DataSampler = DataSampler.dirichlet
+    data_sampler: DataSampler = DataSampler.dirichlet                 
     data_sampler_args: List[float] = field(default_factory=list)
 
     # Set by Node upon argument
