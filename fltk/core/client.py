@@ -132,6 +132,7 @@ class Client(Node):
         @return: Statistics on test-set given a (partially) trained model; accuracy, loss, and confusion matrix.
         @rtype: Tuple[float, float, np.array]
         """
+        self.logger.info("Entered test in client")
         start_time = time.time()
         correct = 0
         total = 0
@@ -152,6 +153,8 @@ class Client(Node):
                 pred_.extend(predicted.cpu().numpy())
 
                 loss += self.loss_function(outputs, labels).item()
+
+        self.logger.info('For loop in test completed')
         # Calculate learning statistics
         loss /= len(self.dataset.get_test_loader().dataset)
         accuracy = 100.0 * correct / total
@@ -177,8 +180,10 @@ class Client(Node):
         """
         self.logger.info(f"[EXEC] running {num_epochs} epochs locally...")
         start = time.time()
+        self.logger.info('Calling train for exec_round')
         loss, weights = self.train(num_epochs, round_id)
         time_mark_between = time.time()
+        self.logger.info('Calling test from exec_round')
         accuracy, test_loss, test_conf_matrix = self.test()
 
         end = time.time()

@@ -349,16 +349,20 @@ class Federator(Node):
             return all(map(lambda x: x.done(), futures))
 
         while not all_futures_done(training_futures):
-            time.sleep(0.1)
-            # self.logger.info('')
-            # self.logger.info(f'Waiting for other clients')
+            time.sleep(1)
+           # self.logger.info('')
+           # self.logger.info(f'Waiting for other clients 1')
 
         self.logger.info('Continue with rest [1]')
-        time.sleep(3)
+        time.sleep(50)
 
+        self.logger.info('Calling aggregation_method')
         updated_model = self.aggregation_method(client_weights, client_sizes)
+
+        self.logger.info('Calling update_nn_parameters')
         self.update_nn_parameters(updated_model)
 
+        self.logger.info('Calling test to test learned global model')
         test_accuracy, test_loss, conf_mat = self.test(self.net)
         self.logger.info(f'[Round {com_round_id:>3}] Federator has a accuracy of {test_accuracy} and loss={test_loss}')
 
@@ -402,12 +406,12 @@ class Federator(Node):
             return all(map(lambda x: x.done(), futures))
 
         while not all_futures_done(training_futures):
-            time.sleep(0.1)
+            time.sleep(1)
             self.logger.info('')
-            # self.logger.info(f'Waiting for other clients')
+            self.logger.info(f'Waiting for other clients 2')
 
-        self.logger.info('Continue with rest [1]')
-        time.sleep(3)
+        self.logger.info('Continue with rest [2]')
+        time.sleep(50)
 
         # local variables
         class_size = {} # size per class
