@@ -181,68 +181,72 @@ class Client(Node):
         self.logger.info(f"[EXEC] running {num_epochs} epochs locally...")
         start = time.time()
         self.logger.info('Calling train for exec_round')
-        loss, weights = self.train(num_epochs, round_id)
-        time_mark_between = time.time()
-        self.logger.info('Calling test from exec_round')
-        accuracy, test_loss, test_conf_matrix = self.test()
+        try:
+            loss, weights = self.train(num_epochs, round_id)
+            time_mark_between = time.time()
+            self.logger.info('Calling test from exec_round')
+            accuracy, test_loss, test_conf_matrix = self.test()
 
-        end = time.time()
-        round_duration = end - start
-        train_duration = time_mark_between - start
-        test_duration = end - time_mark_between
-        self.logger.info("Done with client training for this round")
-        #self.logger.info(f'Round duration is {duration} seconds')
+            end = time.time()
+            round_duration = end - start
+            train_duration = time_mark_between - start
+            test_duration = end - time_mark_between
+            self.logger.info("Done with client training for this round")
+            #self.logger.info(f'Round duration is {duration} seconds')
 
-        if hasattr(self.optimizer, 'pre_communicate'):  # aka fednova or fedprox
-            self.optimizer.pre_communicate()
-        for k, value in weights.items():
-            weights[k] = value.cpu()
+            if hasattr(self.optimizer, 'pre_communicate'):  # aka fednova or fedprox
+                self.optimizer.pre_communicate()
+            for k, value in weights.items():
+                weights[k] = value.cpu()
+        except Exception as e:
+            self.logger.info(f'Failed with exception: {e}')
+
         return loss, weights, accuracy, test_loss, round_duration, train_duration, test_duration, test_conf_matrix
 
     # Group 10 >> starts
-    def get_stats(self) -> Tuple[Any, Any, Any]:
+    def get_stats(self) -> Any:
         self.logger.info('Entered get_stats in client')
 
-        activations = {}
+        activations_map = {}
         model = copy.deepcopy(self.net)
-        model.fc = Identity()
-        self.logger.info(f'[ID:{self.id}] {model}')
+        model.layer_resnet.fc = Identity()
 
         start_time = time.time()
 
         self.logger.info(f'[ID:{self.id}] Starting feature extraction')
 
         with torch.no_grad():
-            for (images, labels) in self.dataset.get_test_loader():
-                images, labels = images.to(self.device), labels.to(self.device)
+            for i, (inputs, labels) in enumerate(self.dataset.get_test_loader(), 0):
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-                outputs = model(images)
+                outputs = model(inputs)
 
-                try:
-                    activations['outputs'].data = torch.cat((activations['outputs'], outputs.clone()), 0)
-                    activations['labels'].data = torch.cat((activations['labels'], labels.clone()), 0)
-                except:
-                    activations['outputs'] = outputs.clone()
-                    activations['labels'] = labels.clone()
+                for (true_label, classifier_output) in zip(labels.data, outputs):
+
+                    true_class = str(true_label.item())
+
+                    if true_class not in activations_map:
+                        activations_map[true_class] = np.array([classifier_output.tolist()])
+
+                    else:
+                        activations_map[true_class] = np.append(activations_map[true_class], np.array([classifier_output.tolist()]), axis=0)
 
         self.logger.info(f'[ID:{self.id}] Feature extraction completed')
 
-        means_dict = {}
-        std_dict = {}
-        sizes_dict = {}
+        class_stats = {}
 
-        for class_name in activations['labels'].unique():
-            means_dict[class_name.item()] = activations['outputs'][activations['labels'] == class_name].mean(0)
-            std_dict[class_name.item()] = activations['outputs'][activations['labels'] == class_name].std(0)
-            sizes_dict[class_name.item()] = torch.sum(activations['labels'] == class_name)
-
-            self.logger.info(f'[ID:{self.id}] Means dimension {means_dict[class_name.item()].shape}')
+        for class_name in activations_map.keys():
+            class_name_key = str(class_name)
+            class_stats[class_name_key] = {}
+            class_stats[class_name_key]['mean'] = np.mean(activations_map[class_name_key], axis=0)
+            class_stats[class_name_key]['cov'] = np.cov(activations_map[class_name_key], rowvar=False)
+            class_stats[class_name_key]['len'] = len(activations_map[class_name_key])
 
         end_time = time.time()
         duration = end_time - start_time
         self.logger.info(f'[ID:{self.id}] Data stats fetched in {duration} seconds')
 
-        return means_dict, std_dict, sizes_dict
+        return class_stats
     # Group 10 << ends
 
     def __del__(self):

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Union, Tuple
 
+import random
 import torch
 
 # Group 10 >> starts
@@ -54,38 +55,51 @@ def cb_factory(future: torch.Future, method, *args, **kwargs):  # pylint: disabl
     future.then(lambda x: method(x, *args, **kwargs))
 
 # Group 10 >> starts
+
+
 class RecalibrationDataset(torch.utils.data.Dataset):
     """Recalibration dataset."""
 
-    def __init__(self, data_X, data_y):
+    def __init__(self, virtual_features):
         """
         Args:
             data_X : Dataframe consisting of features.
             data_y : Dataframe consisting of labels.
         """
-        self.dataX = data_X
-        self.datay = data_y
+        self.vr = virtual_features
 
     def __len__(self):
-        return len(self.dataX)
+        return len(self.vr)
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        return self.dataX[idx], self.datay[idx]
+        return self.vr[idx]
+
 
 class Cifar10Recalibrate(torch.nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, layer):
         super(Cifar10Recalibrate, self).__init__()
-        
-        self.relu = torch.nn.ReLU()
-        self.linear = torch.nn.Linear(7 * 7 * 32, num_classes)
+        self.linear = torch.nn.Linear(layer.in_features, layer.out_features)
+        self.linear.weight.data = layer.weight.data.clone()
+        self.linear.bias.data = layer.bias.data.clone()
 
-    def forward(self, x): # pylint: disable=missing-function-docstring
-        out = self.relu(x)
-        out = self.linear(out)
-        return out
+    def forward(self, x):
+        return self.linear(x)
+
+# class Cifar10Recalibrate(torch.nn.Module):
+#
+#     def __init__(self, num_classes=10):
+#         super(Cifar10Recalibrate, self).__init__()
+#
+#         self.relu = torch.nn.ReLU()
+#         self.linear = torch.nn.Linear(512, num_classes)
+#
+#     def forward(self, x): # pylint: disable=missing-function-docstring
+#         out = self.relu(x)
+#         out = self.linear(out)
+#         return out
 # Group 10 << ends
 
 class Federator(Node):
@@ -204,34 +218,31 @@ class Federator(Node):
                   f'Waiting for {self.world_size - 1 - self._num_clients_online()} clients'
             self.logger.info(msg)
             time.sleep(2)
+
         self.logger.info('All clients are online')
-        # self.logger.info('Running')
-        # time.sleep(10)
+
         self.client_load_data()
         self.get_client_data_sizes()
         self.clients_ready()
-        self.logger.info('Sleeping before starting communication') #Changed here, uncommented this
-        time.sleep(20)     #Changed here, uncommented this
+
         for communication_round in range(self.config.rounds):
-            self.logger.info(f'Starting communication round {communication_round}') #Changed here, added this
+            self.logger.info(f'Starting communication round {communication_round} of {self.config.rounds}')
             self.exec_round(communication_round)
 
         self.logger.info("All communication rounds completed before recalibration starts ")
+
         # Group 10 changes >> starts
-        test_accuracy, test_loss, _ = self.test(self.net)
-        self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} before calibration')
 
         # re-calibration
         self.recalibrate()
 
         test_accuracy, test_loss, _ = self.test(self.net)
         self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} after calibration')
+
         # Group 10 changes << ends
 
         self.save_data()
         self.logger.info('Federator is stopping')
-
-
 
     def save_data(self):
         """
@@ -322,8 +333,6 @@ class Federator(Node):
         # Actual training calls
         client_weights = {}
         client_sizes = {}
-        # pbar = tqdm(selected_clients)
-        # for client in pbar:
 
         # Client training
         training_futures: List[torch.Future] = []  # pylint: disable=no-member
@@ -350,11 +359,9 @@ class Federator(Node):
 
         while not all_futures_done(training_futures):
             time.sleep(1)
-           # self.logger.info('')
-           # self.logger.info(f'Waiting for other clients 1')
+            # self.logger.info('Waiting for client')
 
         self.logger.info('Continue with rest [1]')
-        time.sleep(50)
 
         self.logger.info('Calling aggregation_method')
         updated_model = self.aggregation_method(client_weights, client_sizes)
@@ -364,7 +371,7 @@ class Federator(Node):
 
         self.logger.info('Calling test to test learned global model')
         test_accuracy, test_loss, conf_mat = self.test(self.net)
-        self.logger.info(f'[Round {com_round_id:>3}] Federator has a accuracy of {test_accuracy} and loss={test_loss}')
+        self.logger.info(f'[Round {com_round_id}] Federator has a accuracy of {test_accuracy} and loss={test_loss}')
 
         end_time = time.time()
         duration = end_time - start_time
@@ -381,24 +388,19 @@ class Federator(Node):
         for client in self.clients:
             self.message(client.ref, Client.update_nn_parameters, last_model)
 
-        client_means = {}
-        client_stds = {}
-        client_size = {}
+        client_stats = {}
 
         training_futures: List[torch.Future] = []  # pylint: disable=no-member
 
-        def get_client_stats(fut: torch.Future, client_ref: LocalClient, client_means,
-                             client_stds, client_size):  # pylint: disable=no-member
+        def get_client_stats(fut: torch.Future, client_ref: LocalClient, client_stats):  # pylint: disable=no-member
 
-            means_dict, std_dict, sizes_dict = fut.wait()
+            class_stats = fut.wait()
             self.logger.info(f'Training callback for client {client_ref.name}')
-            client_means[client_ref.name] = means_dict
-            client_stds[client_ref.name] = std_dict
-            client_size[client_ref.name] = sizes_dict
+            client_stats[client_ref.name] = class_stats
 
         for client in self.clients:
             future = self.message_async(client.ref, Client.get_stats)
-            cb_factory(future, get_client_stats, client, client_means, client_stds, client_size)
+            cb_factory(future, get_client_stats, client, client_stats)
             self.logger.info(f'Request sent to client {client.name}')
             training_futures.append(future)
 
@@ -407,152 +409,153 @@ class Federator(Node):
 
         while not all_futures_done(training_futures):
             time.sleep(1)
-            self.logger.info('')
-            self.logger.info(f'Waiting for other clients 2')
 
         self.logger.info('Continue with rest [2]')
-        time.sleep(50)
 
-        # local variables
-        class_size = {} # size per class
-        agg_mean = {} # aggregated means per class
-        agg_std = {} # aggregated standard deviation per class
-        epsilon = 10
+        global_counts = {}
 
-        # Aggregate mean and std per class from paper
-        for client in self.clients:  # loop over clients
-            for class_name in client_means[client.name].keys(): # loop over each class per client
-                try: # aggregate means
-                    agg_mean[class_name].data += client_size[client.name][class_name].data * \
-                                                 client_means[client.name][class_name].data
-                except:
-                    agg_mean[class_name] = client_size[client.name][class_name].data * \
-                                                 client_means[client.name][class_name].data 
-                try: # calculate class sizes
-                    class_size[class_name].data += client_size[client.name][class_name].data
-                except:
-                    class_size[class_name] = client_size[client.name][class_name].data
+        for client_name in client_stats.keys():
+            client_name_key = str(client_name)
 
-        for class_name in agg_mean.keys():
-            agg_mean[class_name].data = agg_mean[class_name]/class_size[class_name]
-        
-        self.logger.info('Completed aggregating means')
+            for class_name in client_stats[client_name_key].keys():
+                class_name_key = str(class_name)
 
-        for client in self.clients: # loop over clients
-            for class_name in client_stds[client.name].keys(): # loop over each class per client
-                try: # aggregate means  size*std(1+std) - std
-                    agg_std[class_name].data +=  ((client_size[client.name][class_name] - 1) * \
-                                                    client_stds[client.name][class_name]) + \
-                                                    (client_size[client.name][class_name] * \
-                                                    agg_mean[class_name] * agg_mean[class_name].T)
-                except:
-                    agg_std[class_name] =  ((client_size[client.name][class_name] - 1) * \
-                                            client_stds[client.name][class_name]) + \
-                                            (client_size[client.name][class_name] * \
-                                            agg_mean[class_name] * agg_mean[class_name].T)
-                  
-        for class_name in agg_std.keys():
-            agg_std[class_name].data = (agg_std[class_name]/(class_size[class_name]-1)) - \
-                          ((class_size[class_name]/(class_size[class_name]-1))*agg_mean[class_name] * \
-                              agg_mean[class_name].T)
-            agg_std[class_name] = abs(agg_std[class_name]) + torch.tensor(epsilon) * torch.ones(agg_std[class_name].shape)
-        
-        self.logger.info('Completed aggregating standard deviation')
+                if class_name_key not in global_counts:
+                    global_counts[class_name_key] = client_stats[client_name_key][class_name_key]['len']
+                else:
+                    global_counts[class_name_key] += client_stats[client_name_key][class_name_key]['len']
 
-        # create normal distribution per class
-        m_c = 100
-        first_val = True
-        failed = False
-        with torch.no_grad():
-            for class_name in agg_mean.keys():
-                self.logger.info(f'Class Name: {class_name}')
-                self.logger.info(f'Agg Means Dim: {agg_mean[class_name].shape}')
-                self.logger.info(f'Cov Matrix Dim: {torch.diag(agg_std[class_name]).shape}')
-                
-                try:
-                    dist = MultivariateNormal(
-                        loc = agg_mean[class_name], 
-                        covariance_matrix=torch.diag(agg_std[class_name])
-                        )
+        self.logger.info('Got global count')
 
-                    class_data = power_transform(dist.rsample(torch.Size([m_c])).cpu())
-                    class_data = torch.Tensor(class_data)
+        global_means = {}
+        global_cov = {}
 
-                    if first_val:
-                        data_X = class_data
-                        data_y = torch.full((m_c,), class_name)
-                        first_val = False
+        virtual_features = []
+
+        for class_name in global_counts.keys():
+            class_name_key = str(class_name)
+
+            self.logger.info(f'Generating virtual features for {class_name_key}')
+
+            global_class_mean = None
+
+            for client_name in client_stats.keys():
+                client_name_key = str(client_name)
+
+                if class_name_key in client_stats[client_name_key]:
+
+                    local_mean = client_stats[client_name_key][class_name_key]['mean']
+                    local_len = client_stats[client_name_key][class_name_key]['len']
+
+                    if global_class_mean is None:
+                        global_class_mean = local_len / global_counts[class_name_key] * local_mean
                     else:
-                        data_X = torch.cat((data_X, class_data), 0) 
-                        data_y = torch.cat((data_y, torch.full((m_c,), class_name)), 0) 
+                        global_class_mean += local_len / global_counts[class_name_key] * local_mean
 
-                except Exception as e: 
-                    failed = True
-                    self.logger.info(f'Sampling failed with error:{e}')
+            global_means[class_name_key] = global_class_mean
 
-        self.logger.info('Completed data generation')
+            global_product_of_mean = np.dot(np.transpose(global_class_mean), global_class_mean)
 
-        if failed:
-            self.logger.info('Failed in data generation')
-            return
+            global_class_cov = None
 
-        recal_dataset = RecalibrationDataset(data_X, data_y)
-        recal_loader = torch.utils.data.DataLoader(recal_dataset, batch_size=128)
+            for client_name in client_stats.keys():
+                client_name_key = str(client_name)
+
+                if class_name_key in client_stats[client_name_key]:
+                    local_cov = client_stats[client_name_key][class_name_key]['cov']
+                    local_len = client_stats[client_name_key][class_name_key]['len']
+
+                    if global_class_cov is None:
+                        global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                    else:
+                        global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+
+                    local_mean = client_stats[client_name_key][class_name_key]['mean']
+                    local_product_of_mean = np.dot(np.transpose([local_mean]), np.array([local_mean]))
+
+                    global_class_cov += (local_len / (global_counts[class_name_key] - 1)) * local_product_of_mean
+
+            global_class_cov -= (global_counts[class_name_key] / (
+                        global_counts[class_name_key] - 1)) * global_product_of_mean
+
+            min_eig_val = np.min(np.real(np.linalg.eigvals(global_class_cov)))
+
+            if min_eig_val < 0:
+                global_class_cov -= 10 * min_eig_val * np.eye(*global_class_cov.shape)
+
+            global_cov[class_name_key] = global_class_cov
+
+            total_virtual_class = 100  # from paper
+            virtual_features_class = np.random.multivariate_normal(global_class_mean, global_class_cov,
+                                                                   size=total_virtual_class)
+
+            for vr in virtual_features_class:
+                virtual_features.append((class_name_key, vr))
+
+        random.shuffle(virtual_features)
+
+        self.logger.info(f'Virtual features generated successfully')
 
         # create model with only linear layer
-        model = Cifar10Recalibrate()
+        model = Cifar10Recalibrate(self.net.layer_resnet.fc)
 
-        with torch.no_grad():
-            model.linear.weight.copy_(self.net.fc.weight)
-            model.linear.bias.copy_(self.net.fc.bias)
+        model = model.to(self.device)
 
         # train classifier using the sampled data
         loss_function = self.config.get_loss_function()()
-        optimizer = get_optimizer(self.config.optimizer)(self.net.parameters(), **self.config.optimizer_args)
+        optimizer = get_optimizer(self.config.optimizer)(model.parameters(), **self.config.optimizer_args)
 
         num_epochs = 1
         start_time = time.time()
 
-        running_loss = 0.0
-        final_running_loss = 0.0
-        # if self.distributed:
-        #     self.dataset.train_sampler.set_epoch(num_epochs)
-
-        number_of_training_samples = len(recal_loader)
+        number_of_training_samples = len(virtual_features)
         self.logger.info(f'Recalibration: Number of training samples: {number_of_training_samples}')
 
-        for i, (inputs, labels) in enumerate(recal_loader, 0):
-            inputs, labels = inputs.to(self.device), labels.to(self.device)
+        recal_data = RecalibrationDataset(virtual_features)
+        recal_loader = torch.utils.data.DataLoader(recal_data, batch_size=128)
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
+        for num_epochs in range(40):
 
-            outputs = model(inputs)
-            loss = loss_function(outputs, labels)
+            total = 0.0
+            correct = 0.0
+            running_loss = 0.0
 
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            # Mark logging update step
-            if i % self.config.log_interval == 0:
-                self.logger.info(
-                        f'[{num_epochs:d}, {i:5d}] loss: {running_loss / self.config.log_interval:.3f}')
-                final_running_loss = running_loss / self.config.log_interval
-                running_loss = 0.0
-                # break
+            for i, (label, features) in enumerate(recal_loader):
+                batch_labels = torch.Tensor(list(map(int, label))).type(torch.LongTensor).to(self.device)
+                batch_features = features.type(torch.FloatTensor).to(self.device)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                outputs = model(batch_features)
+                _, predicted = torch.max(outputs.data, 1)
+
+                total += batch_labels.size(0)
+                correct += (predicted == batch_labels).sum().item()
+
+                loss = loss_function(outputs, batch_labels)
+
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+
+            self.logger.info(f'[{num_epochs:d}] loss: {running_loss / total:.3f}')
+            self.logger.info(f'[{num_epochs:d}] accuracy: {correct / total:.3f}')
 
         end_time = time.time()
         duration = end_time - start_time
         self.logger.info(f'Train duration is {duration} seconds')
 
-        with torch.no_grad():
-            self.net.fc.weight.copy_(model.linear.weight)
-            self.net.fc.bias.copy_(model.linear.bias)
+        self.net.layer_resnet.fc.weight.data = model.linear.weight.data.clone()
+        self.net.layer_resnet.fc.bias.data = model.linear.bias.data.clone()
+        # with torch.no_grad():
+        #     self.net.net.fc.weight.copy_(model.linear.weight)
+        #     self.net.net.fc.bias.copy_(model.linear.bias)
 
         # resend the latest model
-        last_model = self.get_nn_parameters()
-        for client in self.clients:
-            self.message(client.ref, Client.update_nn_parameters, last_model)
+        # last_model = self.get_nn_parameters()
+        # for client in self.clients:
+        #     self.message(client.ref, Client.update_nn_parameters, last_model)
 
         self.logger.info(f'Recalibration Completed')
 

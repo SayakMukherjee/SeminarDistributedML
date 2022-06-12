@@ -9,7 +9,7 @@
          "prefix": "client",
          "tensorboard_active": false
       },
-      "image": "gcr.io/vocal-gist-348321/fltk:latest"
+      "image": "gcr.io/cs4290/fltk:latest"
    },
    "execution_config": {
       "duration": 3600,

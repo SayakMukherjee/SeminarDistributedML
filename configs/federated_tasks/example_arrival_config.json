@@ -12,11 +12,11 @@
         "configurations": {
           "Master": {
             "cores": "1000m",
-            "memory": "1Gi"
+            "memory": "10Gi"
           },
           "Worker": {
-            "cores": "750m",
-            "memory": "1Gi"
+            "cores": "2000m",
+            "memory": "10Gi"
           }
         }
       },
@@ -50,7 +50,7 @@
         }
       },
       "learningParameters": {
-        "totalEpochs": 0,
+        "totalEpochs": 1,
         "rounds": 2,
         "epochsPerRound": 1,
         "cuda": false,

@@ -1,6 +1,9 @@
 # pylint: disable=missing-class-docstring,invalid-name
 import torch
 import torch.nn.functional as F
+import torchvision
+import os
+os.environ['TORCH_HOME'] = 'models'
 
 
 class BasicBlock(torch.nn.Module):
@@ -62,40 +65,56 @@ class Bottleneck(torch.nn.Module):
         return out
 
 
+# class Cifar10ResNet(torch.nn.Module):
+#     def __init__(self, block: torch.nn.Module = BasicBlock, num_blocks=None, num_classes=10):
+#         super(Cifar10ResNet, self).__init__()
+#         if num_blocks is None:
+#             num_blocks = [2, 2, 2, 2]
+#         self.in_planes = 64
+#
+#         self.conv1 = torch.nn.Conv2d(3, 64, kernel_size=3,
+#                                stride=1, padding=1, bias=False)
+#         self.bn1 = torch.nn.BatchNorm2d(64)
+#         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+#         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+#         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+#         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+#         self.linear = torch.nn.Linear(512 * block.expansion, num_classes)
+#
+#     def _make_layer(self, block, planes, num_blocks, stride):
+#         strides = [stride] + [1] * (num_blocks - 1)
+#         layers = []
+#         for stride in strides:
+#             layers.append(block(self.in_planes, planes, stride))
+#             self.in_planes = planes * block.expansion
+#         return torch.nn.Sequential(*layers)
+#
+#     def forward(self, x): # pylint: disable=missing-function-docstring
+#         out = F.relu(self.bn1(self.conv1(x)))
+#         out = self.layer1(out)
+#         out = self.layer2(out)
+#         out = self.layer3(out)
+#         out = self.layer4(out)
+#         out = F.avg_pool2d(out, 4)
+#         out = out.view(out.size(0), -1)
+#         out = self.linear(out)
+#         return out
+
+# Group 10 changes << starts
+
 class Cifar10ResNet(torch.nn.Module):
     def __init__(self, block: torch.nn.Module = BasicBlock, num_blocks=None, num_classes=10):
         super(Cifar10ResNet, self).__init__()
-        if num_blocks is None:
-            num_blocks = [2, 2, 2, 2]
-        self.in_planes = 64
 
-        self.conv1 = torch.nn.Conv2d(3, 64, kernel_size=3,
-                               stride=1, padding=1, bias=False)
-        self.bn1 = torch.nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear = torch.nn.Linear(512 * block.expansion, num_classes)
+        self.layer_resnet = torchvision.models.resnet18(pretrained=True)
+        num_feat = self.layer_resnet.fc.in_features
+        self.layer_resnet.fc = torch.nn.Linear(num_feat, num_classes)
 
-    def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1] * (num_blocks - 1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride))
-            self.in_planes = planes * block.expansion
-        return torch.nn.Sequential(*layers)
-
-    def forward(self, x): # pylint: disable=missing-function-docstring
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
-        out = out.view(out.size(0), -1)
-        out = self.linear(out)
+    def forward(self, x):  # pylint: disable=missing-function-docstring
+        out = self.layer_resnet(x)
         return out
+
+# Group 10 changes << ends
 
 
 class ResNet18(Cifar10ResNet):

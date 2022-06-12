@@ -151,3 +151,4 @@ logging/*
 distml/*
 manifests/*
 manifests
+models/*
