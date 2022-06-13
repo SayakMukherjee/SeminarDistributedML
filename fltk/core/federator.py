@@ -86,7 +86,7 @@ class Cifar10Recalibrate(torch.nn.Module):
         self.linear.bias.data = layer.bias.data.clone()
 
     def forward(self, x):
-        return self.linear(x)
+        return torch.nn.ReLU(self.linear(x))
 
 # class Cifar10Recalibrate(torch.nn.Module):
 #
@@ -485,7 +485,7 @@ class Federator(Node):
 
             global_cov[class_name_key] = global_class_cov
 
-            total_virtual_class = 100  # from paper
+            total_virtual_class = 50  # from paper
             virtual_features_class = np.random.multivariate_normal(global_class_mean, global_class_cov,
                                                                    size=total_virtual_class)
 
@@ -514,7 +514,7 @@ class Federator(Node):
         recal_data = RecalibrationDataset(virtual_features)
         recal_loader = torch.utils.data.DataLoader(recal_data, batch_size=128)
 
-        for num_epochs in range(40):
+        for num_epochs in range(num_epochs):
 
             total = 0.0
             correct = 0.0
@@ -548,14 +548,6 @@ class Federator(Node):
 
         self.net.layer_resnet.fc.weight.data = model.linear.weight.data.clone()
         self.net.layer_resnet.fc.bias.data = model.linear.bias.data.clone()
-        # with torch.no_grad():
-        #     self.net.net.fc.weight.copy_(model.linear.weight)
-        #     self.net.net.fc.bias.copy_(model.linear.bias)
-
-        # resend the latest model
-        # last_model = self.get_nn_parameters()
-        # for client in self.clients:
-        #     self.message(client.ref, Client.update_nn_parameters, last_model)
 
         self.logger.info(f'Recalibration Completed')
 

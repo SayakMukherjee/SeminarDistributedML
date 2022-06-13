@@ -16,8 +16,8 @@ single_machine: false
 aggregration: FedAvg
 dataset_name: cifar10
 net_name: Cifar10ResNet
-data_sampler: uniform
-data_sampler_args: [0.7, 42]
+data_sampler: dirichlet
+data_sampler_args: [0.05, 42]
 replication_id: 0
 real_time: true
 save_data_append: true

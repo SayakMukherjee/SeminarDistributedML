@@ -23,7 +23,7 @@ class IMBALANCECIFAR10(datasets.CIFAR10):
         np.random.seed(rand_number)
         img_num_list = self.get_img_num_per_cls(self.cls_num, imb_type, imb_factor)
         self.gen_imbalanced_data(img_num_list)
-        self.logger.info('Loading imbalanced Cifar10')
+        print('Loading imbalanced Cifar10')
 
     def get_img_num_per_cls(self, cls_num, imb_type, imb_factor):
         img_max = len(self.data) / cls_num
