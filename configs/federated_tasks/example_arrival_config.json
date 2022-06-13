@@ -22,13 +22,13 @@
       },
       "hyperParameters": {
         "default": {
-          "batchSize": 128,
-          "testBatchSize": 128,
-          "learningRateDecay": 0.0002,
+          "batchSize": 64,
+          "testBatchSize": 64,
+          "learningRateDecay": 0.00005,
           "optimizerConfig": {
             "type": "SGD",
-            "learningRate": 0.01,
-            "momentum": 0.1
+            "learningRate": 0.001,
+            "momentum": 0.9
           },
           "schedulerConfig": {
             "schedulerStepSize": 50,
@@ -41,7 +41,7 @@
           "Worker": {
             "batchSize": 500,
             "optimizerConfig": {
-              "learningRate": 0.05
+              "learningRate": 0.001
             },
             "schedulerConfig": {
               "schedulerStepSize": 2000
@@ -51,13 +51,13 @@
       },
       "learningParameters": {
         "totalEpochs": 1,
-        "rounds": 2,
-        "epochsPerRound": 1,
+        "rounds": 20,
+        "epochsPerRound": 10,
         "cuda": false,
         "clientsPerRound": 2,
         "dataSampler": {
           "type": "dirichlet",
-          "qValue": 0.07,
+          "qValue": 0.05,
           "seed": 42,
           "shuffle": true
         },

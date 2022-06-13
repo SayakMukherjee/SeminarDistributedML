@@ -13,13 +13,30 @@ from fltk.util.config import FedLearningConfig
 # Group 10 >> starts
 import copy
 
+
 class Identity(torch.nn.Module):
     def __init__(self):
         super(Identity, self).__init__()
         
     def forward(self, x):
         return x
+
+# https://github.com/ShuoYang-1998/Few_Shot_Distribution_Calibration/blob/master/evaluate_DC.py
+
+
+def distribution_calibration(query, base_means, base_cov, k=2, alpha=0.21):
+    print('Distribution Calibration')
+    dist = []
+    for i in range(len(base_means)):
+        dist.append(np.linalg.norm(query-base_means[i]))
+    index = np.argpartition(dist, k)[:k]
+    mean = np.concatenate([np.array(base_means)[index], query[np.newaxis, :]])
+    calibrated_mean = np.mean(mean, axis=0)
+    calibrated_cov = np.mean(np.array(base_cov)[index], axis=0)+alpha
+
+    return calibrated_mean, calibrated_cov
 # Group 10 << ends
+
 
 class Client(Node):
     """
@@ -209,7 +226,8 @@ class Client(Node):
 
         activations_map = {}
         model = copy.deepcopy(self.net)
-        model.layer_resnet.fc = Identity()
+        # model.layer_resnet.fc = Identity()
+        model.layer7 = Identity()
 
         start_time = time.time()
 
@@ -234,6 +252,8 @@ class Client(Node):
         self.logger.info(f'[ID:{self.id}] Feature extraction completed')
 
         class_stats = {}
+        num_classes = 10
+        len_map = np.array([99999999] * num_classes)
 
         for class_name in activations_map.keys():
             class_name_key = str(class_name)
@@ -241,6 +261,23 @@ class Client(Node):
             class_stats[class_name_key]['mean'] = np.mean(activations_map[class_name_key], axis=0)
             class_stats[class_name_key]['cov'] = np.cov(activations_map[class_name_key], rowvar=False)
             class_stats[class_name_key]['len'] = len(activations_map[class_name_key])
+            len_map[int(class_name)] = class_stats[class_name_key]['len']
+
+        novel_idx = np.argsort(len_map)[:3]
+        base_means = []
+        base_covs = []
+        for class_name in class_stats.keys():
+            class_name_key = str(class_name)
+            if class_name not in novel_idx:
+                base_means.append(class_stats[class_name_key]['mean'])
+                base_covs.append(class_stats[class_name_key]['cov'])
+
+        for novel_class in novel_idx:
+            novel_class_key = str(novel_class)
+            recal_mean, recal_cov = distribution_calibration(class_stats[novel_class_key]['mean'],
+                                                             base_means, base_covs)
+            class_stats[novel_class_key]['mean'] = recal_mean
+            class_stats[novel_class_key]['cov'] = recal_cov
 
         end_time = time.time()
         duration = end_time - start_time

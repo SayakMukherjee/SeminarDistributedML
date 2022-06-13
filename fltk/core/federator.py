@@ -14,6 +14,7 @@ import torch
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data.dataset import T
 from fltk.strategy import get_optimizer
+import torch.nn.functional as F
 from sklearn.preprocessing import power_transform
 # Group 10 << ends
 
@@ -86,21 +87,8 @@ class Cifar10Recalibrate(torch.nn.Module):
         self.linear.bias.data = layer.bias.data.clone()
 
     def forward(self, x):
-        return torch.nn.ReLU(self.linear(x))
+        return self.linear(F.relu(x))
 
-# class Cifar10Recalibrate(torch.nn.Module):
-#
-#     def __init__(self, num_classes=10):
-#         super(Cifar10Recalibrate, self).__init__()
-#
-#         self.relu = torch.nn.ReLU()
-#         self.linear = torch.nn.Linear(512, num_classes)
-#
-#     def forward(self, x): # pylint: disable=missing-function-docstring
-#         out = self.relu(x)
-#         out = self.linear(out)
-#         return out
-# Group 10 << ends
 
 class Federator(Node):
     """
@@ -485,7 +473,7 @@ class Federator(Node):
 
             global_cov[class_name_key] = global_class_cov
 
-            total_virtual_class = 50  # from paper
+            total_virtual_class = 2000  # from paper
             virtual_features_class = np.random.multivariate_normal(global_class_mean, global_class_cov,
                                                                    size=total_virtual_class)
 
@@ -497,7 +485,8 @@ class Federator(Node):
         self.logger.info(f'Virtual features generated successfully')
 
         # create model with only linear layer
-        model = Cifar10Recalibrate(self.net.layer_resnet.fc)
+        # model = Cifar10Recalibrate(self.net.layer_resnet.fc) layer7
+        model = Cifar10Recalibrate(self.net.layer7)
 
         model = model.to(self.device)
 
@@ -505,7 +494,7 @@ class Federator(Node):
         loss_function = self.config.get_loss_function()()
         optimizer = get_optimizer(self.config.optimizer)(model.parameters(), **self.config.optimizer_args)
 
-        num_epochs = 1
+        # num_epochs = 10
         start_time = time.time()
 
         number_of_training_samples = len(virtual_features)
@@ -514,7 +503,7 @@ class Federator(Node):
         recal_data = RecalibrationDataset(virtual_features)
         recal_loader = torch.utils.data.DataLoader(recal_data, batch_size=128)
 
-        for num_epochs in range(num_epochs):
+        for num_epochs in range(self.config.epochs):
 
             total = 0.0
             correct = 0.0
@@ -546,8 +535,11 @@ class Federator(Node):
         duration = end_time - start_time
         self.logger.info(f'Train duration is {duration} seconds')
 
-        self.net.layer_resnet.fc.weight.data = model.linear.weight.data.clone()
-        self.net.layer_resnet.fc.bias.data = model.linear.bias.data.clone()
+        # self.net.layer_resnet.fc.weight.data = model.linear.weight.data.clone()
+        # self.net.layer_resnet.fc.bias.data = model.linear.bias.data.clone()
+
+        self.net.layer7.weight.data = model.linear.weight.data.clone()
+        self.net.layer7.bias.data = model.linear.bias.data.clone()
 
         self.logger.info(f'Recalibration Completed')
 
