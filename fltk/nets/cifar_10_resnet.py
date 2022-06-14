@@ -128,8 +128,10 @@ class Cifar10ResNet(torch.nn.Module):
         self.layer3 = torch.nn.Linear(400, 120)
         self.layer4 = torch.nn.Linear(120, 84)
         self.layer5 = torch.nn.Linear(84, 84)
-        self.layer6 = torch.nn.Linear(84, 256)
-        self.layer7 = torch.nn.Linear(256, num_classes)
+        # self.layer6 = torch.nn.Linear(84, 256)
+        # self.layer7 = torch.nn.Linear(256, num_classes)
+        self.layer6 = torch.nn.Linear(84, num_classes)
+        self.layer7 = torch.nn.Linear(num_classes, num_classes)
 
     def forward(self, x):  # pylint: disable=missing-function-docstring
 

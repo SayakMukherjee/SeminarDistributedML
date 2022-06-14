@@ -11,7 +11,7 @@
         "dataParallelism": null,
         "configurations": {
           "Master": {
-            "cores": "1000m",
+            "cores": "2000m",
             "memory": "10Gi"
           },
           "Worker": {
@@ -24,10 +24,10 @@
         "default": {
           "batchSize": 64,
           "testBatchSize": 64,
-          "learningRateDecay": 0.00005,
+          "learningRateDecay": 0.0001,
           "optimizerConfig": {
             "type": "SGD",
-            "learningRate": 0.001,
+            "learningRate": 0.01,
             "momentum": 0.9
           },
           "schedulerConfig": {
@@ -50,9 +50,9 @@
         }
       },
       "learningParameters": {
-        "totalEpochs": 1,
-        "rounds": 20,
-        "epochsPerRound": 10,
+        "totalEpochs": 5,
+        "rounds": 50,
+        "epochsPerRound": 5,
         "cuda": false,
         "clientsPerRound": 2,
         "dataSampler": {

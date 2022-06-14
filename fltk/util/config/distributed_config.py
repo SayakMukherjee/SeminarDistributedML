@@ -8,9 +8,9 @@ from dataclasses_json import config, dataclass_json
 @dataclass_json
 @dataclass
 class GeneralNetConfig:
-    save_model: bool = False
+    save_model: bool = True
     save_temp_model: bool = False
-    save_epoch_interval: int = 1
+    save_epoch_interval: int = 10
     save_model_path: str = 'models'
     epoch_save_start_suffix: str = 'cloud_experiment'
     epoch_save_end_suffix: str = 'cloud_experiment'
