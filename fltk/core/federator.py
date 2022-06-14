@@ -61,22 +61,23 @@ def cb_factory(future: torch.Future, method, *args, **kwargs):  # pylint: disabl
 class RecalibrationDataset(torch.utils.data.Dataset):
     """Recalibration dataset."""
 
-    def __init__(self, virtual_features):
+    def __init__(self, virtual_features, virtual_labels):
         """
         Args:
             data_X : Dataframe consisting of features.
             data_y : Dataframe consisting of labels.
         """
-        self.vr = virtual_features
+        self.data_X = virtual_features
+        self.data_y = virtual_labels
 
     def __len__(self):
-        return len(self.vr)
+        return len(self.data_X)
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-
-        return self.vr[idx]
+        
+        return self.data_X[idx], self.data_y[idx]
 
 
 class Cifar10Recalibrate(torch.nn.Module):
@@ -84,7 +85,7 @@ class Cifar10Recalibrate(torch.nn.Module):
         super(Cifar10Recalibrate, self).__init__()
         self.linear = torch.nn.Linear(layer.in_features, layer.out_features)
         self.linear.weight.data = layer.weight.data.clone()
-        self.linear.bias.data = layer.bias.data.clone()
+        # self.linear.bias.data = layer.bias.data.clone()
 
     def forward(self, x):
         return self.linear(F.relu(x))
@@ -221,6 +222,8 @@ class Federator(Node):
 
         # Group 10 changes >> starts
 
+        self.save_model('federator')
+
         # re-calibration
         self.recalibrate()
 
@@ -280,7 +283,7 @@ class Federator(Node):
             for (images, labels) in self.dataset.get_test_loader():
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                outputs = net(images)
+                _, outputs = net(images)
 
                 _, predicted = torch.max(outputs.data, 1)  # pylint: disable=no-member
                 total += labels.size(0)
@@ -419,6 +422,7 @@ class Federator(Node):
         global_cov = {}
 
         virtual_features = []
+        virtual_labels = []
 
         for class_name in global_counts.keys():
             class_name_key = str(class_name)
@@ -478,58 +482,71 @@ class Federator(Node):
                                                                    size=total_virtual_class)
 
             for vr in virtual_features_class:
-                virtual_features.append((class_name_key, vr))
+                virtual_features.append(vr)
+                virtual_labels.append(int(class_name_key))
 
-        random.shuffle(virtual_features)
+        virtual_features = np.array(virtual_features)
+        virtual_labels = np.array(virtual_labels)
+
+        virtual_features = power_transform(virtual_features, method='yeo-johnson')
 
         self.logger.info(f'Virtual features generated successfully')
+
+        self.freeze_layers()
 
         # create model with only linear layer
         # model = Cifar10Recalibrate(self.net.layer_resnet.fc) layer7
         model = Cifar10Recalibrate(self.net.layer7)
-
         model = model.to(self.device)
 
         # train classifier using the sampled data
         loss_function = self.config.get_loss_function()()
-        optimizer = get_optimizer(self.config.optimizer)(model.parameters(), **self.config.optimizer_args)
+        optimizer = get_optimizer(self.config.optimizer)(filter(lambda x: x.requires_grad, model.parameters()), **self.config.optimizer_args)
 
-        # num_epochs = 10
+        num_epochs = 5
         start_time = time.time()
 
         number_of_training_samples = len(virtual_features)
         self.logger.info(f'Recalibration: Number of training samples: {number_of_training_samples}')
 
-        recal_data = RecalibrationDataset(virtual_features)
-        recal_loader = torch.utils.data.DataLoader(recal_data, batch_size=self.config.batch_size)
+        recal_dataset = RecalibrationDataset(virtual_features, virtual_labels)
+        recal_loader = torch.utils.data.DataLoader(recal_dataset, batch_size=64, shuffle=True)
 
-        for num_epochs in range(self.config.epochs):
+        for num_epochs in range(num_epochs):
 
             total = 0.0
-            correct = 0.0
             running_loss = 0.0
+            correct = 0.0
 
-            for i, (label, features) in enumerate(recal_loader):
-                batch_labels = torch.Tensor(list(map(int, label))).type(torch.LongTensor).to(self.device)
-                batch_features = features.type(torch.FloatTensor).to(self.device)
+            for i, (features, labels) in enumerate(recal_loader):
+                # batch_labels = torch.Tensor(list(label)).type(torch.LongTensor).to(self.device)
+                # batch_features = features.type(torch.FloatTensor).to(self.device)
 
+                features, labels = features.type(torch.FloatTensor).to(self.device), labels.to(self.device)
+                
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
-                outputs = model(batch_features)
+                outputs = model(features)
+
                 _, predicted = torch.max(outputs.data, 1)
 
-                total += batch_labels.size(0)
-                correct += (predicted == batch_labels).sum().item()
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
 
-                loss = loss_function(outputs, batch_labels)
+                loss = loss_function(outputs, labels)
 
                 loss.backward()
                 optimizer.step()
                 running_loss += loss.item()
 
-            self.logger.info(f'[{num_epochs:d}] loss: {running_loss / total:.3f}')
-            self.logger.info(f'[{num_epochs:d}] accuracy: {correct / total:.3f}')
+                # Mark logging update step
+                if i % 100 == 0:
+                    self.logger.info(f'loss: {running_loss / 100:.3f}')
+                    running_loss = 0.0
+                    # break
+
+            self.logger.info(f'loss: {correct / total}')
 
         end_time = time.time()
         duration = end_time - start_time
@@ -539,7 +556,7 @@ class Federator(Node):
         # self.net.layer_resnet.fc.bias.data = model.linear.bias.data.clone()
 
         self.net.layer7.weight.data = model.linear.weight.data.clone()
-        self.net.layer7.bias.data = model.linear.bias.data.clone()
+        # self.net.layer7.bias.data = model.linear.bias.data.clone()
 
         self.logger.info(f'Recalibration Completed')
 

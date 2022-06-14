@@ -75,7 +75,7 @@ class LearningConfig:
 class FedLearningConfig(LearningConfig):
     loss_function: Loss = Loss.cross_entropy_loss
     # Number of communication epochs.
-    rounds: int = 50
+    rounds: int = 10
     # Number of epochs to perform per ROUND
     epochs: int = 10
     lr: float = 0.01
@@ -92,8 +92,8 @@ class FedLearningConfig(LearningConfig):
     # Enum
     log_level: LogLevel = LogLevel.DEBUG
 
-    num_clients: int = 10
-    clients_per_round: int = 2
+    num_clients: int = 3
+    clients_per_round: int = 3
     distributed: bool = True
     single_machine: bool = False
     # Enum

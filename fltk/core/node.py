@@ -207,3 +207,18 @@ class Node(abc.ABC):
 
     def __repr__(self):
         return str(self.id)
+
+    def freeze_layers(self):
+        self.net.layer1.requires_grad = False
+        self.net.max_pool1.requires_grad = False
+
+        self.net.layer2.requires_grad = False
+        self.net.max_pool2.requires_grad = False
+
+        self.net.layer3.requires_grad = False
+        self.net.layer4.requires_grad = False
+        self.net.layer5.requires_grad = False
+        self.net.layer6.requires_grad = False
+
+    def save_model(self, name):
+        torch.save(self.net.state_dict(), os.path.join('models/', name + '_model_weights.pth'))

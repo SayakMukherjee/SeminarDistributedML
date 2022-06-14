@@ -27,7 +27,7 @@
           "learningRateDecay": 0.0001,
           "optimizerConfig": {
             "type": "SGD",
-            "learningRate": 0.01,
+            "learningRate": 0.001,
             "momentum": 0.9
           },
           "schedulerConfig": {
@@ -39,7 +39,7 @@
         "configurations": {
           "Master": null,
           "Worker": {
-            "batchSize": 500,
+            "batchSize": 64,
             "optimizerConfig": {
               "learningRate": 0.001
             },
@@ -50,11 +50,11 @@
         }
       },
       "learningParameters": {
-        "totalEpochs": 5,
-        "rounds": 50,
-        "epochsPerRound": 5,
+        "totalEpochs": 10,
+        "rounds": 100,
+        "epochsPerRound": 10,
         "cuda": false,
-        "clientsPerRound": 2,
+        "clientsPerRound": 3,
         "dataSampler": {
           "type": "dirichlet",
           "qValue": 0.05,
@@ -73,7 +73,7 @@
         ],
         "workerReplication": {
           "Master": 1,
-          "Worker": 2
+          "Worker": 3
         }
       }
     }

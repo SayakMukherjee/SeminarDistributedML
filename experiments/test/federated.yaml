@@ -1,7 +1,7 @@
 batch_size: 64
 test_batch_size: 64
 rounds: 1
-lr: 0.001
+lr: 0.01
 momentum: 0.9
 cuda: False
 shuffle: True
@@ -10,7 +10,7 @@ scheduler_gamma: 0.5
 min_lr: 1e-10
 rng_seed: 1
 optimizer: SGD
-optimizer_args: {'lr': 0.001, 'momentum': 0.9}
+optimizer_args: {'lr': 0.01, 'momentum': 0.9}
 distributed: true
 single_machine: false
 aggregration: FedAvg

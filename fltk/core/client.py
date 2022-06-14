@@ -116,7 +116,7 @@ class Client(Node):
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
 
-                outputs = self.net(inputs)
+                _, outputs = self.net(inputs)
                 loss = self.loss_function(outputs, labels)
 
                 loss.backward()
@@ -160,7 +160,7 @@ class Client(Node):
             for (images, labels) in self.dataset.get_test_loader():
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                outputs = self.net(images)
+                _, outputs = self.net(images)
 
                 _, predicted = torch.max(outputs.data, 1)  # pylint: disable=no-member
                 total += labels.size(0)
@@ -224,10 +224,12 @@ class Client(Node):
     def get_stats(self) -> Any:
         self.logger.info('Entered get_stats in client')
 
+        self.save_model(self.id)
+
         activations_map = {}
-        model = copy.deepcopy(self.net)
+        # model = copy.deepcopy(self.net)
         # model.layer_resnet.fc = Identity()
-        model.layer7 = Identity()
+        # model.layer7 = Identity()
 
         start_time = time.time()
 
@@ -237,9 +239,9 @@ class Client(Node):
             for i, (inputs, labels) in enumerate(self.dataset.get_test_loader(), 0):
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-                outputs = model(inputs)
+                features, _ = self.net(inputs)
 
-                for (true_label, classifier_output) in zip(labels.data, outputs):
+                for (true_label, classifier_output) in zip(labels.data, features):
 
                     true_class = str(true_label.item())
 
