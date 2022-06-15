@@ -415,8 +415,11 @@ class Federator(Node):
                     global_counts[class_name_key] = client_stats[client_name_key][class_name_key]['len']
                 else:
                     global_counts[class_name_key] += client_stats[client_name_key][class_name_key]['len']
+                
+                self.logger.info(f"client_name_key: {client_name_key}, class_name_key: {class_name_key}, client_stats: {client_stats[client_name_key][class_name_key]['len']} ")
 
         self.logger.info('Got global count')
+        self.logger.info(f'Printing global counts {global_counts}')
 
         global_means = {}
         global_cov = {}
@@ -458,9 +461,15 @@ class Federator(Node):
                     local_len = client_stats[client_name_key][class_name_key]['len']
 
                     if global_class_cov is None:
-                        global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        if global_counts[class_name_key] > 1:
+                            global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        else:
+                            global_class_cov = 1 * local_cov
                     else:
-                        global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        if global_counts[class_name_key] > 1:
+                            global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        else:
+                            global_class_cov += 1* local_cov
 
                     local_mean = client_stats[client_name_key][class_name_key]['mean']
                     local_product_of_mean = np.dot(np.transpose([local_mean]), np.array([local_mean]))

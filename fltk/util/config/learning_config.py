@@ -75,7 +75,7 @@ class LearningConfig:
 class FedLearningConfig(LearningConfig):
     loss_function: Loss = Loss.cross_entropy_loss
     # Number of communication epochs.
-    rounds: int = 100
+    rounds: int = 2
     # Number of epochs to perform per ROUND
     epochs: int = 10
     lr: float = 0.001

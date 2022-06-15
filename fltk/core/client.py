@@ -265,21 +265,25 @@ class Client(Node):
             class_stats[class_name_key]['len'] = len(activations_map[class_name_key])
             len_map[int(class_name)] = class_stats[class_name_key]['len']
 
-        # novel_idx = np.argsort(len_map)[:3]
-        # base_means = []
-        # base_covs = []
-        # for class_name in class_stats.keys():
-        #     class_name_key = str(class_name)
-        #     if class_name not in novel_idx:
-        #         base_means.append(class_stats[class_name_key]['mean'])
-        #         base_covs.append(class_stats[class_name_key]['cov'])
+        # >> Recalibration 2 starts    
 
-        # for novel_class in novel_idx:
-        #     novel_class_key = str(novel_class)
-        #     recal_mean, recal_cov = distribution_calibration(class_stats[novel_class_key]['mean'],
-        #                                                      base_means, base_covs)
-        #     class_stats[novel_class_key]['mean'] = recal_mean
-        #     class_stats[novel_class_key]['cov'] = recal_cov
+        novel_idx = np.argsort(len_map)[:3]
+        base_means = []
+        base_covs = []
+        for class_name in class_stats.keys():
+            class_name_key = str(class_name)
+            if class_name not in novel_idx:
+                base_means.append(class_stats[class_name_key]['mean'])
+                base_covs.append(class_stats[class_name_key]['cov'])
+
+        for novel_class in novel_idx:
+            novel_class_key = str(novel_class)
+            recal_mean, recal_cov = distribution_calibration(class_stats[novel_class_key]['mean'],
+                                                             base_means, base_covs)
+            class_stats[novel_class_key]['mean'] = recal_mean
+            class_stats[novel_class_key]['cov'] = recal_cov
+
+        # >> Recalibration 2 ends     
 
         end_time = time.time()
         duration = end_time - start_time
