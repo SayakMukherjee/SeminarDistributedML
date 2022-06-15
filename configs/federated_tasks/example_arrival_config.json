@@ -24,10 +24,10 @@
         "default": {
           "batchSize": 64,
           "testBatchSize": 64,
-          "learningRateDecay": 0.0001,
+          "learningRateDecay": 0.00001,
           "optimizerConfig": {
             "type": "SGD",
-            "learningRate": 0.01,
+            "learningRate": 0.001,
             "momentum": 0.9
           },
           "schedulerConfig": {
@@ -41,7 +41,7 @@
           "Worker": {
             "batchSize": 64,
             "optimizerConfig": {
-              "learningRate": 0.01
+              "learningRate": 0.001
             },
             "schedulerConfig": {
               "schedulerStepSize": 2000
@@ -51,7 +51,7 @@
       },
       "learningParameters": {
         "totalEpochs": 10,
-        "rounds": 20,
+        "rounds": 100,
         "epochsPerRound": 10,
         "cuda": false,
         "clientsPerRound": 3,

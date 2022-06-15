@@ -477,7 +477,7 @@ class Federator(Node):
 
             global_cov[class_name_key] = global_class_cov
 
-            total_virtual_class = 100  # from paper
+            total_virtual_class = 2000  # from paper
             virtual_features_class = np.random.multivariate_normal(global_class_mean, global_class_cov,
                                                                    size=total_virtual_class)
 
