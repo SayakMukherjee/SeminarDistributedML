@@ -51,7 +51,7 @@
       },
       "learningParameters": {
         "totalEpochs": 10,
-        "rounds": 2,
+        "rounds": 1,
         "epochsPerRound": 10,
         "cuda": false,
         "clientsPerRound": 3,

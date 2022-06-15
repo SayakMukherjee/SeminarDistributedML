@@ -461,23 +461,24 @@ class Federator(Node):
                     local_len = client_stats[client_name_key][class_name_key]['len']
 
                     if global_class_cov is None:
-                        if global_counts[class_name_key] > 1:
-                            global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
-                        else:
-                            global_class_cov = 1 * local_cov
+                        global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # if global_counts[class_name_key] > 1:
+                        #     global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # else:
+                        #     global_class_cov = 1 * local_cov
                     else:
-                        if global_counts[class_name_key] > 1:
-                            global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
-                        else:
-                            global_class_cov += 1* local_cov
+                        global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # if global_counts[class_name_key] > 1:
+                        #     global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # else:
+                        #     global_class_cov += 1* local_cov
 
                     local_mean = client_stats[client_name_key][class_name_key]['mean']
                     local_product_of_mean = np.dot(np.transpose([local_mean]), np.array([local_mean]))
 
                     global_class_cov += (local_len / (global_counts[class_name_key] - 1)) * local_product_of_mean
 
-            global_class_cov -= (global_counts[class_name_key] / (
-                        global_counts[class_name_key] - 1)) * global_product_of_mean
+            global_class_cov -= (global_counts[class_name_key] / (global_counts[class_name_key] - 1)) * global_product_of_mean
 
             min_eig_val = np.min(np.real(np.linalg.eigvals(global_class_cov)))
 

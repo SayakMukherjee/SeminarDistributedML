@@ -236,7 +236,7 @@ class Client(Node):
         self.logger.info(f'[ID:{self.id}] Starting feature extraction')
 
         with torch.no_grad():
-            for i, (inputs, labels) in enumerate(self.dataset.get_test_loader(), 0):
+            for i, (inputs, labels) in enumerate(self.dataset.get_train_loader(), 0):
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                 features, _ = self.net(inputs)
@@ -266,20 +266,25 @@ class Client(Node):
             len_map[int(class_name)] = class_stats[class_name_key]['len']
 
         # >> Recalibration 2 starts    
-
-        novel_idx = np.argsort(len_map)[:3]
+        novel_idx = np.argsort(len_map)[:1].tolist()
+        self.logger.info(f'Novel classes: {novel_idx}')
         base_means = []
         base_covs = []
         for class_name in class_stats.keys():
             class_name_key = str(class_name)
-            if class_name not in novel_idx:
+            if int(class_name) not in novel_idx:
+                self.logger.info(f'Adding base class: {class_name}')
                 base_means.append(class_stats[class_name_key]['mean'])
                 base_covs.append(class_stats[class_name_key]['cov'])
 
         for novel_class in novel_idx:
             novel_class_key = str(novel_class)
-            recal_mean, recal_cov = distribution_calibration(class_stats[novel_class_key]['mean'],
-                                                             base_means, base_covs)
+            self.logger.info(f'Recalibrating for novel class: {novel_class_key}')
+            try:
+                recal_mean, recal_cov = distribution_calibration(class_stats[novel_class_key]['mean'],
+                                                             base_means, base_covs, k=min(len(base_means), 2))
+            except Exception as e:
+                self.logger.info(f'Error: {e}')
             class_stats[novel_class_key]['mean'] = recal_mean
             class_stats[novel_class_key]['cov'] = recal_cov
 
