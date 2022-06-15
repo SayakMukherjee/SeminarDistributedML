@@ -16,7 +16,7 @@ https://github.com/kaidic/LDAM-DRW/blob/master/imbalance_cifar.py
 class IMBALANCECIFAR10(datasets.CIFAR10):
     cls_num = 10
 
-    def __init__(self, root, imb_type='exp', imb_factor=0.01, rand_number=0, train=True,
+    def __init__(self, root, imb_type='exp', imb_factor=0.1, rand_number=0, train=True,
                  transform=None, target_transform=None,
                  download=False):
         super(IMBALANCECIFAR10, self).__init__(root, train, transform, target_transform, download)
@@ -91,11 +91,11 @@ class DistCIFAR10Dataset(DistDataset):
         ])
 
         # Group 10 changes >> starts
-        # self.train_dataset = datasets.CIFAR10(root=self.get_args().get_data_path(), train=True, download=True,
-        #                                       transform=transform)
-
-        self.train_dataset = IMBALANCECIFAR10(root=self.get_args().get_data_path(), train=True, download=True,
+        self.train_dataset = datasets.CIFAR10(root=self.get_args().get_data_path(), train=True, download=True,
                                               transform=transform)
+
+        # self.train_dataset = IMBALANCECIFAR10(root=self.get_args().get_data_path(), train=True, download=True,
+        #                                       transform=transform)
         # Group 10 changes << ends
 
         self.train_sampler = get_sampler(self.train_dataset, self.args)
@@ -115,11 +115,11 @@ class DistCIFAR10Dataset(DistDataset):
 
         # Group 10 changes >> starts
         
-        # self.test_dataset = datasets.CIFAR10(root=self.get_args().get_data_path(), train=False, download=True,
-        #                                      transform=transform)
-
-        self.test_dataset = IMBALANCECIFAR10(root=self.get_args().get_data_path(), train=False, download=True,
+        self.test_dataset = datasets.CIFAR10(root=self.get_args().get_data_path(), train=False, download=True,
                                              transform=transform)
+
+        # self.test_dataset = IMBALANCECIFAR10(root=self.get_args().get_data_path(), train=False, download=True,
+        #                                      transform=transform)
         # Group 10 changes << ends
 
         self.test_sampler = get_sampler(self.test_dataset, self.args)
