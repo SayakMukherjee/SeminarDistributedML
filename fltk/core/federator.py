@@ -222,7 +222,7 @@ class Federator(Node):
 
         # Group 10 changes >> starts
 
-        self.save_model('federator')
+        # self.save_model()
 
         # re-calibration
         self.recalibrate()

@@ -102,7 +102,7 @@ class FedLearningConfig(LearningConfig):
     dataset_name: Dataset = Dataset.cifar10                         #Updated this
     # Enum
     net_name: Nets = Nets.cifar10_resnet                            #Updated this
-    default_model_folder_path: str = "default_models"
+    default_model_folder_path = "models"
     data_path: str = "data"
     # Enum
     data_sampler: DataSampler = DataSampler.dirichlet                 

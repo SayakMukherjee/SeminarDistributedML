@@ -27,7 +27,7 @@
           "learningRateDecay": 0.0001,
           "optimizerConfig": {
             "type": "SGD",
-            "learningRate": 0.001,
+            "learningRate": 0.01,
             "momentum": 0.9
           },
           "schedulerConfig": {
@@ -41,7 +41,7 @@
           "Worker": {
             "batchSize": 64,
             "optimizerConfig": {
-              "learningRate": 0.001
+              "learningRate": 0.01
             },
             "schedulerConfig": {
               "schedulerStepSize": 2000
@@ -51,7 +51,7 @@
       },
       "learningParameters": {
         "totalEpochs": 10,
-        "rounds": 100,
+        "rounds": 20,
         "epochsPerRound": 10,
         "cuda": false,
         "clientsPerRound": 3,

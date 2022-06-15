@@ -220,5 +220,10 @@ class Node(abc.ABC):
         self.net.layer5.requires_grad = False
         self.net.layer6.requires_grad = False
 
-    def save_model(self, name):
-        torch.save(self.net.state_dict(), os.path.join('models/', name + '_model_weights.pth'))
+    def save_model(self):
+        dir_name = self.config.get_default_model_folder_path()
+
+        if not os.path.isdir(dir_name):
+            os.makedirs(dir_name, exist_ok=True)
+
+        torch.save(self.net.state_dict(), os.path.join(dir_name, self.id + '_model_weights.pth'))

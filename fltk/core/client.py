@@ -224,7 +224,7 @@ class Client(Node):
     def get_stats(self) -> Any:
         self.logger.info('Entered get_stats in client')
 
-        self.save_model(self.id)
+        # self.save_model()
 
         activations_map = {}
         # model = copy.deepcopy(self.net)
