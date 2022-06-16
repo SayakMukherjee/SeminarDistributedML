@@ -15,4 +15,6 @@ def random_selection(clients: List[ClientRef], size: int) -> List[ClientRef]:
     @return: List of client sampled from the provided pool of clients.
     @rtype: List[ClientRef]
     """
+    print(f'Number of clients to sample: {size}')
+    print(f'Number of clients: {len(clients)}')
     return np.random.choice(clients, size, replace=False)

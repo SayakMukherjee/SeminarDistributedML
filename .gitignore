@@ -149,3 +149,6 @@ experiments/**/exps/*
 
 logging/*
 distml/*
+manifests/*
+manifests
+models/*

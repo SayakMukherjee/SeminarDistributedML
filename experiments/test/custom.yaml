@@ -1,0 +1,28 @@
+batch_size: 128
+test_batch_size: 128
+cuda: False
+scheduler_step_size: 50
+scheduler_gamma: 0.5
+rounds: 2
+epochs: 4
+lr: 0.01
+momentum: 0.1
+shuffle: True
+log_interval: 10
+min_lr: 1e-10
+rng_seed: 1
+optimizer: SGD
+optimizer_args: {'lr': 0.01, 'momentum': 0.1}
+loss_function: torch.nn.CrossEntropyLoss
+clients_per_round: 1
+distributed: true
+single_machine: false
+aggregation: FedAvg
+dataset_name: cifar10
+net_name: Cifar10ResNet
+data_sampler: uniform
+data_sampler_args: [0.7, 42]
+real_time: true
+save_data_append: true
+replication_id: 0
+output_path: logging/Dataset.cifar10_Nets.cifar10_resnet_5c5949c9-7ae1-4aa0-baf8-74b18324b7d5_0

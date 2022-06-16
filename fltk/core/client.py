@@ -10,6 +10,33 @@ from fltk.schedulers import MinCapableStepLR
 from fltk.strategy import get_optimizer
 from fltk.util.config import FedLearningConfig
 
+# Group 10 >> starts
+import copy
+
+
+class Identity(torch.nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+        
+    def forward(self, x):
+        return x
+
+# https://github.com/ShuoYang-1998/Few_Shot_Distribution_Calibration/blob/master/evaluate_DC.py
+
+
+def distribution_calibration(query, base_means, base_cov, k=2, alpha=0.21):
+    print('Distribution Calibration')
+    dist = []
+    for i in range(len(base_means)):
+        dist.append(np.linalg.norm(query-base_means[i]))
+    index = np.argpartition(dist, k)[:k]
+    mean = np.concatenate([np.array(base_means)[index], query[np.newaxis, :]])
+    calibrated_mean = np.mean(mean, axis=0)
+    calibrated_cov = np.mean(np.array(base_cov)[index], axis=0)+alpha
+
+    return calibrated_mean, calibrated_cov
+# Group 10 << ends
+
 
 class Client(Node):
     """
@@ -89,7 +116,7 @@ class Client(Node):
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
 
-                outputs = self.net(inputs)
+                _, outputs = self.net(inputs)
                 loss = self.loss_function(outputs, labels)
 
                 loss.backward()
@@ -105,7 +132,7 @@ class Client(Node):
             duration = end_time - start_time
             self.logger.info(f'{progress} Train duration is {duration} seconds')
 
-        return final_running_loss, self.get_nn_parameters(),
+        return final_running_loss, self.get_nn_parameters()
 
     def set_tau_eff(self, total):
         client_weight = self.get_client_datasize() / total
@@ -122,6 +149,7 @@ class Client(Node):
         @return: Statistics on test-set given a (partially) trained model; accuracy, loss, and confusion matrix.
         @rtype: Tuple[float, float, np.array]
         """
+        self.logger.info("Entered test in client")
         start_time = time.time()
         correct = 0
         total = 0
@@ -132,7 +160,7 @@ class Client(Node):
             for (images, labels) in self.dataset.get_test_loader():
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                outputs = self.net(images)
+                _, outputs = self.net(images)
 
                 _, predicted = torch.max(outputs.data, 1)  # pylint: disable=no-member
                 total += labels.size(0)
@@ -142,6 +170,8 @@ class Client(Node):
                 pred_.extend(predicted.cpu().numpy())
 
                 loss += self.loss_function(outputs, labels).item()
+
+        self.logger.info('For loop in test completed')
         # Calculate learning statistics
         loss /= len(self.dataset.get_test_loader().dataset)
         accuracy = 100.0 * correct / total
@@ -165,23 +195,107 @@ class Client(Node):
         training make-span, testing make-span, and confusion matrix.
         @rtype: Tuple[Any, Any, Any, Any, float, float, float, np.array]
         """
-        self.logger.info(f"[EXEC] running {num_epochs} locally...")
+        self.logger.info(f"[EXEC] running {num_epochs} epochs locally...")
         start = time.time()
-        loss, weights = self.train(num_epochs, round_id)
-        time_mark_between = time.time()
-        accuracy, test_loss, test_conf_matrix = self.test()
+        self.logger.info('Calling train for exec_round')
+        try:
+            loss, weights = self.train(num_epochs, round_id)
+            time_mark_between = time.time()
+            self.logger.info('Calling test from exec_round')
+            accuracy, test_loss, test_conf_matrix = self.test()
 
-        end = time.time()
-        round_duration = end - start
-        train_duration = time_mark_between - start
-        test_duration = end - time_mark_between
-        # self.logger.info(f'Round duration is {duration} seconds')
+            end = time.time()
+            round_duration = end - start
+            train_duration = time_mark_between - start
+            test_duration = end - time_mark_between
+            self.logger.info("Done with client training for this round")
+            #self.logger.info(f'Round duration is {duration} seconds')
 
-        if hasattr(self.optimizer, 'pre_communicate'):  # aka fednova or fedprox
-            self.optimizer.pre_communicate()
-        for k, value in weights.items():
-            weights[k] = value.cpu()
+            if hasattr(self.optimizer, 'pre_communicate'):  # aka fednova or fedprox
+                self.optimizer.pre_communicate()
+            for k, value in weights.items():
+                weights[k] = value.cpu()
+        except Exception as e:
+            self.logger.info(f'Failed with exception: {e}')
+
         return loss, weights, accuracy, test_loss, round_duration, train_duration, test_duration, test_conf_matrix
+
+    # Group 10 >> starts
+    def get_stats(self) -> Any:
+        self.logger.info('Entered get_stats in client')
+
+        # self.save_model()
+
+        activations_map = {}
+        # model = copy.deepcopy(self.net)
+        # model.layer_resnet.fc = Identity()
+        # model.layer7 = Identity()
+
+        start_time = time.time()
+
+        self.logger.info(f'[ID:{self.id}] Starting feature extraction')
+
+        with torch.no_grad():
+            for i, (inputs, labels) in enumerate(self.dataset.get_train_loader(), 0):
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+                features, _ = self.net(inputs)
+
+                for (true_label, classifier_output) in zip(labels.data, features):
+
+                    true_class = str(true_label.item())
+
+                    if true_class not in activations_map:
+                        activations_map[true_class] = np.array([classifier_output.tolist()])
+
+                    else:
+                        activations_map[true_class] = np.append(activations_map[true_class], np.array([classifier_output.tolist()]), axis=0)
+
+        self.logger.info(f'[ID:{self.id}] Feature extraction completed')
+
+        class_stats = {}
+        num_classes = 10
+        len_map = np.array([99999999] * num_classes)
+
+        for class_name in activations_map.keys():
+            class_name_key = str(class_name)
+            class_stats[class_name_key] = {}
+            class_stats[class_name_key]['mean'] = np.mean(activations_map[class_name_key], axis=0)
+            class_stats[class_name_key]['cov'] = np.cov(activations_map[class_name_key], rowvar=False)
+            class_stats[class_name_key]['len'] = len(activations_map[class_name_key])
+            len_map[int(class_name)] = class_stats[class_name_key]['len']
+
+        # >> Recalibration 2 starts    
+        # novel_idx = np.argsort(len_map)[:1].tolist()
+        # self.logger.info(f'Novel classes: {novel_idx}')
+        # base_means = []
+        # base_covs = []
+        # for class_name in class_stats.keys():
+        #     class_name_key = str(class_name)
+        #     if int(class_name) not in novel_idx:
+        #         self.logger.info(f'Adding base class: {class_name}')
+        #         base_means.append(class_stats[class_name_key]['mean'])
+        #         base_covs.append(class_stats[class_name_key]['cov'])
+
+        # for novel_class in novel_idx:
+        #     novel_class_key = str(novel_class)
+        #     self.logger.info(f'Recalibrating for novel class: {novel_class_key}')
+        #     try:
+        #         recal_mean, recal_cov = distribution_calibration(class_stats[novel_class_key]['mean'],
+        #                                                      base_means, base_covs, k=min(len(base_means), 2))
+        #     except Exception as e:
+        #         self.logger.info(f'Error: {e}')
+        #     class_stats[novel_class_key]['mean'] = recal_mean
+        #     class_stats[novel_class_key]['cov'] = recal_cov
+
+        # >> Recalibration 2 ends     
+
+        end_time = time.time()
+        duration = end_time - start_time
+        self.logger.info(f'[ID:{self.id}] Data stats fetched in {duration} seconds')
+
+        return class_stats
+    # Group 10 << ends
 
     def __del__(self):
         self.logger.info(f'Client {self.id} is stopping')

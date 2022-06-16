@@ -3,32 +3,32 @@
     "type": "federated",
     "jobClassParameters": {
       "networkConfiguration": {
-        "network": "FashionMNISTCNN",
+        "network": "Cifar10ResNet",
         "lossFunction": "CrossEntropyLoss",
-        "dataset": "mnist"
+        "dataset": "cifar10"
       },
       "systemParameters": {
         "dataParallelism": null,
         "configurations": {
           "Master": {
-            "cores": "1000m",
-            "memory": "1Gi"
+            "cores": "2000m",
+            "memory": "10Gi"
           },
           "Worker": {
-            "cores": "750m",
-            "memory": "1Gi"
+            "cores": "2000m",
+            "memory": "10Gi"
           }
         }
       },
       "hyperParameters": {
         "default": {
-          "batchSize": 128,
-          "testBatchSize": 128,
-          "learningRateDecay": 0.0002,
+          "batchSize": 64,
+          "testBatchSize": 64,
+          "learningRateDecay": 0.00001,
           "optimizerConfig": {
             "type": "SGD",
             "learningRate": 0.01,
-            "momentum": 0.1
+            "momentum": 0.9
           },
           "schedulerConfig": {
             "schedulerStepSize": 50,
@@ -39,9 +39,9 @@
         "configurations": {
           "Master": null,
           "Worker": {
-            "batchSize": 500,
+            "batchSize": 64,
             "optimizerConfig": {
-              "learningRate": 0.05
+              "learningRate": 0.01
             },
             "schedulerConfig": {
               "schedulerStepSize": 2000
@@ -50,14 +50,14 @@
         }
       },
       "learningParameters": {
-        "totalEpochs": 0,
-        "rounds": 5,
-        "epochsPerRound": 1,
+        "totalEpochs": 10,
+        "rounds": 20,
+        "epochsPerRound": 10,
         "cuda": false,
-        "clientsPerRound": 2,
+        "clientsPerRound": 3,
         "dataSampler": {
-          "type": "uniform",
-          "qValue": 0.07,
+          "type": "dirichlet",
+          "qValue": 0.05,
           "seed": 42,
           "shuffle": true
         },
@@ -73,7 +73,7 @@
         ],
         "workerReplication": {
           "Master": 1,
-          "Worker": 2
+          "Worker": 3
         }
       }
     }

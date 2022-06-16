@@ -7,7 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Union, Tuple
 
+import random
 import torch
+
+# Group 10 >> starts
+from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.utils.data.dataset import T
+from fltk.strategy import get_optimizer
+import torch.nn.functional as F
+from sklearn.preprocessing import power_transform
+# Group 10 << ends
 
 from fltk.core.client import Client
 from fltk.core.node import Node
@@ -45,6 +54,41 @@ def cb_factory(future: torch.Future, method, *args, **kwargs):  # pylint: disabl
     @rtype: None
     """
     future.then(lambda x: method(x, *args, **kwargs))
+
+# Group 10 >> starts
+
+
+class RecalibrationDataset(torch.utils.data.Dataset):
+    """Recalibration dataset."""
+
+    def __init__(self, virtual_features, virtual_labels):
+        """
+        Args:
+            data_X : Dataframe consisting of features.
+            data_y : Dataframe consisting of labels.
+        """
+        self.data_X = virtual_features
+        self.data_y = virtual_labels
+
+    def __len__(self):
+        return len(self.data_X)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        
+        return self.data_X[idx], self.data_y[idx]
+
+
+class Cifar10Recalibrate(torch.nn.Module):
+    def __init__(self, layer):
+        super(Cifar10Recalibrate, self).__init__()
+        self.linear = torch.nn.Linear(layer.in_features, layer.out_features)
+        self.linear.weight.data = layer.weight.data.clone()
+        # self.linear.bias.data = layer.bias.data.clone()
+
+    def forward(self, x):
+        return self.linear(F.relu(x))
 
 
 class Federator(Node):
@@ -163,16 +207,30 @@ class Federator(Node):
                   f'Waiting for {self.world_size - 1 - self._num_clients_online()} clients'
             self.logger.info(msg)
             time.sleep(2)
+
         self.logger.info('All clients are online')
-        # self.logger.info('Running')
-        # time.sleep(10)
+
         self.client_load_data()
         self.get_client_data_sizes()
         self.clients_ready()
-        # self.logger.info('Sleeping before starting communication')
-        # time.sleep(20)
+
         for communication_round in range(self.config.rounds):
+            self.logger.info(f'Starting communication round {communication_round} of {self.config.rounds}')
             self.exec_round(communication_round)
+
+        self.logger.info("All communication rounds completed before recalibration starts ")
+
+        # Group 10 changes >> starts
+
+        # self.save_model()
+
+        # re-calibration
+        self.recalibrate()
+
+        test_accuracy, test_loss, _ = self.test(self.net)
+        self.logger.info(f'Federator has a accuracy of {test_accuracy} and loss={test_loss} after calibration')
+
+        # Group 10 changes << ends
 
         self.save_data()
         self.logger.info('Federator is stopping')
@@ -225,7 +283,7 @@ class Federator(Node):
             for (images, labels) in self.dataset.get_test_loader():
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                outputs = net(images)
+                _, outputs = net(images)
 
                 _, predicted = torch.max(outputs.data, 1)  # pylint: disable=no-member
                 total += labels.size(0)
@@ -266,8 +324,6 @@ class Federator(Node):
         # Actual training calls
         client_weights = {}
         client_sizes = {}
-        # pbar = tqdm(selected_clients)
-        # for client in pbar:
 
         # Client training
         training_futures: List[torch.Future] = []  # pylint: disable=no-member
@@ -293,18 +349,20 @@ class Federator(Node):
             return all(map(lambda x: x.done(), futures))
 
         while not all_futures_done(training_futures):
-            time.sleep(0.1)
-            # self.logger.info('')
-            # self.logger.info(f'Waiting for other clients')
+            time.sleep(1)
+            # self.logger.info('Waiting for client')
 
         self.logger.info('Continue with rest [1]')
-        time.sleep(3)
 
+        self.logger.info('Calling aggregation_method')
         updated_model = self.aggregation_method(client_weights, client_sizes)
+
+        self.logger.info('Calling update_nn_parameters')
         self.update_nn_parameters(updated_model)
 
+        self.logger.info('Calling test to test learned global model')
         test_accuracy, test_loss, conf_mat = self.test(self.net)
-        self.logger.info(f'[Round {com_round_id:>3}] Federator has a accuracy of {test_accuracy} and loss={test_loss}')
+        self.logger.info(f'[Round {com_round_id}] Federator has a accuracy of {test_accuracy} and loss={test_loss}')
 
         end_time = time.time()
         duration = end_time - start_time
@@ -312,3 +370,204 @@ class Federator(Node):
                                  confusion_matrix=conf_mat)
         self.exp_data.append(record)
         self.logger.info(f'[Round {com_round_id:>3}] Round duration is {duration} seconds')
+
+    # Group 10 changes>> starts
+    def recalibrate(self):
+
+        # resend the latest model
+        last_model = self.get_nn_parameters()
+        for client in self.clients:
+            self.message(client.ref, Client.update_nn_parameters, last_model)
+
+        client_stats = {}
+
+        training_futures: List[torch.Future] = []  # pylint: disable=no-member
+
+        def get_client_stats(fut: torch.Future, client_ref: LocalClient, client_stats):  # pylint: disable=no-member
+
+            class_stats = fut.wait()
+            self.logger.info(f'Training callback for client {client_ref.name}')
+            client_stats[client_ref.name] = class_stats
+
+        for client in self.clients:
+            future = self.message_async(client.ref, Client.get_stats)
+            cb_factory(future, get_client_stats, client, client_stats)
+            self.logger.info(f'Request sent to client {client.name}')
+            training_futures.append(future)
+
+        def all_futures_done(futures: List[torch.Future]) -> bool:  # pylint: disable=no-member
+            return all(map(lambda x: x.done(), futures))
+
+        while not all_futures_done(training_futures):
+            time.sleep(1)
+
+        self.logger.info('Continue with rest [2]')
+
+        global_counts = {}
+
+        for client_name in client_stats.keys():
+            client_name_key = str(client_name)
+
+            for class_name in client_stats[client_name_key].keys():
+                class_name_key = str(class_name)
+
+                if class_name_key not in global_counts:
+                    global_counts[class_name_key] = client_stats[client_name_key][class_name_key]['len']
+                else:
+                    global_counts[class_name_key] += client_stats[client_name_key][class_name_key]['len']
+                
+                self.logger.info(f"client_name_key: {client_name_key}, class_name_key: {class_name_key}, client_stats: {client_stats[client_name_key][class_name_key]['len']} ")
+
+        self.logger.info('Got global count')
+        self.logger.info(f'Printing global counts {global_counts}')
+
+        global_means = {}
+        global_cov = {}
+
+        virtual_features = []
+        virtual_labels = []
+
+        for class_name in global_counts.keys():
+            class_name_key = str(class_name)
+
+            self.logger.info(f'Generating virtual features for {class_name_key}')
+
+            global_class_mean = None
+
+            for client_name in client_stats.keys():
+                client_name_key = str(client_name)
+
+                if class_name_key in client_stats[client_name_key]:
+
+                    local_mean = client_stats[client_name_key][class_name_key]['mean']
+                    local_len = client_stats[client_name_key][class_name_key]['len']
+
+                    if global_class_mean is None:
+                        global_class_mean = local_len / global_counts[class_name_key] * local_mean
+                    else:
+                        global_class_mean += local_len / global_counts[class_name_key] * local_mean
+
+            global_means[class_name_key] = global_class_mean
+
+            global_product_of_mean = np.dot(np.transpose(global_class_mean), global_class_mean)
+
+            global_class_cov = None
+
+            for client_name in client_stats.keys():
+                client_name_key = str(client_name)
+
+                if class_name_key in client_stats[client_name_key]:
+                    local_cov = client_stats[client_name_key][class_name_key]['cov']
+                    local_len = client_stats[client_name_key][class_name_key]['len']
+
+                    if global_class_cov is None:
+                        global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # if global_counts[class_name_key] > 1:
+                        #     global_class_cov = ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # else:
+                        #     global_class_cov = 1 * local_cov
+                    else:
+                        global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # if global_counts[class_name_key] > 1:
+                        #     global_class_cov += ((local_len - 1) / (global_counts[class_name_key] - 1)) * local_cov
+                        # else:
+                        #     global_class_cov += 1* local_cov
+
+                    local_mean = client_stats[client_name_key][class_name_key]['mean']
+                    local_product_of_mean = np.dot(np.transpose([local_mean]), np.array([local_mean]))
+
+                    global_class_cov += (local_len / (global_counts[class_name_key] - 1)) * local_product_of_mean
+
+            global_class_cov -= (global_counts[class_name_key] / (global_counts[class_name_key] - 1)) * global_product_of_mean
+
+            min_eig_val = np.min(np.real(np.linalg.eigvals(global_class_cov)))
+
+            if min_eig_val < 0:
+                global_class_cov -= 10 * min_eig_val * np.eye(*global_class_cov.shape)
+
+            global_cov[class_name_key] = global_class_cov
+
+            total_virtual_class = 2000  # from paper
+            virtual_features_class = np.random.multivariate_normal(global_class_mean, global_class_cov,
+                                                                   size=total_virtual_class)
+
+            for vr in virtual_features_class:
+                virtual_features.append(vr)
+                virtual_labels.append(int(class_name_key))
+
+        virtual_features = np.array(virtual_features)
+        virtual_labels = np.array(virtual_labels)
+
+        virtual_features = power_transform(virtual_features, method='yeo-johnson')
+
+        self.logger.info(f'Virtual features generated successfully')
+
+        self.freeze_layers()
+
+        # create model with only linear layer
+        # model = Cifar10Recalibrate(self.net.layer_resnet.fc) layer7
+        model = Cifar10Recalibrate(self.net.layer7)
+        model = model.to(self.device)
+
+        # train classifier using the sampled data
+        loss_function = self.config.get_loss_function()()
+        optimizer = get_optimizer(self.config.optimizer)(filter(lambda x: x.requires_grad, model.parameters()), **self.config.optimizer_args)
+
+        num_epochs = 5
+        start_time = time.time()
+
+        number_of_training_samples = len(virtual_features)
+        self.logger.info(f'Recalibration: Number of training samples: {number_of_training_samples}')
+
+        recal_dataset = RecalibrationDataset(virtual_features, virtual_labels)
+        recal_loader = torch.utils.data.DataLoader(recal_dataset, batch_size=64, shuffle=True)
+
+        for num_epochs in range(num_epochs):
+
+            total = 0.0
+            running_loss = 0.0
+            correct = 0.0
+
+            for i, (features, labels) in enumerate(recal_loader):
+                # batch_labels = torch.Tensor(list(label)).type(torch.LongTensor).to(self.device)
+                # batch_features = features.type(torch.FloatTensor).to(self.device)
+
+                features, labels = features.type(torch.FloatTensor).to(self.device), labels.to(self.device)
+                
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                outputs = model(features)
+
+                _, predicted = torch.max(outputs.data, 1)
+
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+                loss = loss_function(outputs, labels)
+
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+
+                # Mark logging update step
+                if i % 100 == 0:
+                    self.logger.info(f'loss: {running_loss / 100:.3f}')
+                    running_loss = 0.0
+                    # break
+
+            self.logger.info(f'loss: {correct / total}')
+
+        end_time = time.time()
+        duration = end_time - start_time
+        self.logger.info(f'Train duration is {duration} seconds')
+
+        # self.net.layer_resnet.fc.weight.data = model.linear.weight.data.clone()
+        # self.net.layer_resnet.fc.bias.data = model.linear.bias.data.clone()
+
+        self.net.layer7.weight.data = model.linear.weight.data.clone()
+        # self.net.layer7.bias.data = model.linear.bias.data.clone()
+
+        self.logger.info(f'Recalibration Completed')
+
+    # Group 10 changes << ends

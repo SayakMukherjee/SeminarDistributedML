@@ -75,11 +75,11 @@ class LearningConfig:
 class FedLearningConfig(LearningConfig):
     loss_function: Loss = Loss.cross_entropy_loss
     # Number of communication epochs.
-    rounds: int = 2
+    rounds: int = 20
     # Number of epochs to perform per ROUND
-    epochs: int = 1
+    epochs: int = 10
     lr: float = 0.01
-    momentum: float = 0.1
+    momentum: float = 0.9
     shuffle: bool = False
     log_interval: int = 10
     rng_seed = 0
@@ -92,20 +92,20 @@ class FedLearningConfig(LearningConfig):
     # Enum
     log_level: LogLevel = LogLevel.DEBUG
 
-    num_clients: int = 10
-    clients_per_round: int = 2
+    num_clients: int = 3
+    clients_per_round: int = 3
     distributed: bool = True
     single_machine: bool = False
     # Enum
     aggregation: Aggregations = Aggregations.fedavg
     # Enum
-    dataset_name: Dataset = Dataset.mnist
+    dataset_name: Dataset = Dataset.cifar10                         #Updated this
     # Enum
-    net_name: Nets = Nets.mnist_cnn
-    default_model_folder_path: str = "default_models"
+    net_name: Nets = Nets.cifar10_resnet                            #Updated this
+    default_model_folder_path = "models"
     data_path: str = "data"
     # Enum
-    data_sampler: DataSampler = DataSampler.uniform
+    data_sampler: DataSampler = DataSampler.dirichlet                 
     data_sampler_args: List[float] = field(default_factory=list)
 
     # Set by Node upon argument

@@ -207,3 +207,23 @@ class Node(abc.ABC):
 
     def __repr__(self):
         return str(self.id)
+
+    def freeze_layers(self):
+        self.net.layer1.requires_grad = False
+        self.net.max_pool1.requires_grad = False
+
+        self.net.layer2.requires_grad = False
+        self.net.max_pool2.requires_grad = False
+
+        self.net.layer3.requires_grad = False
+        self.net.layer4.requires_grad = False
+        self.net.layer5.requires_grad = False
+        self.net.layer6.requires_grad = False
+
+    def save_model(self):
+        dir_name = self.config.get_default_model_folder_path()
+
+        if not os.path.isdir(dir_name):
+            os.makedirs(dir_name, exist_ok=True)
+
+        torch.save(self.net.state_dict(), os.path.join(dir_name, self.id + '_model_weights.pth'))

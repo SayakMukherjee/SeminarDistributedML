@@ -16,6 +16,8 @@ class DirichletSampler(DistributedSamplerWrapper):
     def __init__(self, dataset: Dataset, num_replicas = None,
                  rank = None, args = (0.5, 42)) -> None:
         alpha, seed = args
+        alpha = 0.05
+        print('Hardcoded alpha')
         super().__init__(dataset, num_replicas=num_replicas, rank=rank, seed=seed)
 
         np.random.seed(seed)

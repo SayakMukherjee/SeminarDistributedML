@@ -26,6 +26,7 @@ class CIFAR10Dataset(Dataset):
                                          train=True,
                                          download=True,
                                          transform=transform)
+
         if not self.world_size:
             sampler = None
         else:

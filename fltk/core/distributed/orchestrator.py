@@ -163,13 +163,15 @@ class Orchestrator(DistNode):
                 # TODO: Extend this logic in your real project, this is only meant for demo purposes
                 # For now we exit the thread after scheduling a single task.
 
-                self.stop()
-                return
+                # self.stop()
+                # return
 
             self.__logger.debug("Still alive...")
             time.sleep(5)
 
         logging.info('Experiment completed, currently does not support waiting.')
+        self.stop()
+        return
 
     def run_batch(self, clear: bool = False) -> None:
         """
@@ -183,8 +185,8 @@ class Orchestrator(DistNode):
         """
         self._alive = True
         start_time = time.time()
-        if clear:
-            self.__clear_jobs()
+        # if clear:
+        #     self.__clear_jobs()
         while self._alive and time.time() - start_time < self._config.get_duration():
             # 1. Check arrivals
             # If new arrivals, store them in arrival list
@@ -214,6 +216,7 @@ class Orchestrator(DistNode):
                 # TODO: Extend this logic in your real project, this is only meant for demo purposes
                 # For now we exit the thread after scheduling a single task.
                 self.stop()
+                return
 
             self.__logger.debug("Still alive...")
             time.sleep(5)

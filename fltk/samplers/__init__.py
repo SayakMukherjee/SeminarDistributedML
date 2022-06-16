@@ -25,7 +25,7 @@ def get_sampler(dataset, args):
     if args.get_distributed():
         method = args.get_sampler()
         msg = f"Using {method} sampler method, with args: {args.get_sampler_args()}"
-        logger.debug(msg)
+        logger.info(msg)
 
         if method == DataSampler.uniform:
             sampler = UniformSampler(dataset, num_replicas=args.get_world_size(), rank=args.get_rank())
